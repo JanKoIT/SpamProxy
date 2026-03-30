@@ -4,6 +4,27 @@ Transparenter AntiSpam-Proxy mit Postfix, rspamd, KI-Klassifizierung, ClamAV Vir
 
 SpamProxy wird als MX vor den eigentlichen Mailserver geschaltet und filtert eingehende sowie ausgehende E-Mails. Spam wird in eine Quarantäne verschoben, wo Benutzer Mails freigeben oder ablehnen können.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Login](docs/screenshots/login.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| Login | Dashboard |
+| ![Quarantine](docs/screenshots/quarantine.png) | ![Mail Log](docs/screenshots/mail-log.png) |
+| Quarantäne | Mail-Log |
+| ![Postfix Log](docs/screenshots/postfix-log.png) | ![Security](docs/screenshots/security.png) |
+| Postfix-Log | Security & Scanning |
+| ![Scoring](docs/screenshots/scoring.png) | ![Blocklists](docs/screenshots/blocklists.png) |
+| Score-Anpassungen | DNS Blocklists |
+| ![Access Lists](docs/screenshots/access-lists.png) | ![DKIM](docs/screenshots/dkim.png) |
+| Whitelist / Blacklist | DKIM Keys |
+| ![AI Test](docs/screenshots/ai-test.png) | ![Sender Domains](docs/screenshots/sender-domains.png) |
+| AI Spam-Test | Absenderdomains |
+| ![Outgoing Auth](docs/screenshots/outgoing-auth.png) | ![Federation](docs/screenshots/federation.png) |
+| Outgoing SMTP Auth | Federation |
+| ![Domains](docs/screenshots/domains.png) | ![Settings](docs/screenshots/settings.png) |
+| Domain-Routing | Einstellungen |
+
 ## Features
 
 ### Mail-Verarbeitung
