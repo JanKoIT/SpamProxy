@@ -21,6 +21,7 @@ import {
   Brain,
   Send,
   Network,
+  Type,
 } from "lucide-react";
 
 const navItems = [
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/settings/blocklists", label: "Blocklists", icon: List },
   { href: "/settings/access-lists", label: "White-/Blacklist", icon: ShieldCheck },
   { href: "/settings/scoring", label: "Scoring", icon: TrendingUp },
+  { href: "/settings/keywords", label: "Keywords", icon: Type },
   { href: "/settings/dkim", label: "DKIM", icon: Key },
   { href: "/settings/ai-test", label: "AI Test", icon: Brain },
   { href: "/settings", label: "Settings", icon: Settings },

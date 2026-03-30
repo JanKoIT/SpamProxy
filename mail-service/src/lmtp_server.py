@@ -11,7 +11,7 @@ from aiosmtpd.lmtp import LMTP
 
 from .config import settings
 from .db import async_session
-from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain
+from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule
 from .quarantine.manager import QuarantineManager
 from sqlalchemy import select
 
@@ -116,6 +116,12 @@ class ContentFilterHandler:
                         score_adj = await self._apply_scoring_rules(db, mail_from)
                         final_score += score_adj
 
+                    # Apply keyword scoring
+                    keyword_adj = await self._apply_keyword_rules(
+                        db, subject, mail_from, parsed
+                    )
+                    final_score += keyword_adj
+
                 if final_score >= REJECT_THRESHOLD:
                     action = "rejected"
                 elif final_score >= QUARANTINE_THRESHOLD:
@@ -171,6 +177,61 @@ class ContentFilterHandler:
             except Exception:
                 logger.exception("Re-injection also failed")
             return "250 OK (error fallback)"
+
+    async def _apply_keyword_rules(self, session, subject: str, mail_from: str, parsed_msg) -> float:
+        """Apply keyword scoring rules."""
+        result = await session.execute(
+            select(KeywordRule).where(KeywordRule.is_active.is_(True))
+        )
+        rules = result.scalars().all()
+        total_adj = 0.0
+
+        # Extract body for matching
+        body = ""
+        try:
+            body_part = parsed_msg.get_body(preferencelist=("plain",))
+            if body_part:
+                body = body_part.get_content()[:5000].lower()
+        except Exception:
+            pass
+
+        subject_lower = (subject or "").lower()
+        from_lower = (mail_from or "").lower()
+
+        for rule in rules:
+            kw = rule.keyword.lower()
+            matched = False
+
+            if rule.match_field == "subject":
+                fields = [subject_lower]
+            elif rule.match_field == "body":
+                fields = [body]
+            elif rule.match_field == "from":
+                fields = [from_lower]
+            else:  # any
+                fields = [subject_lower, body, from_lower]
+
+            for field in fields:
+                if rule.match_type == "contains":
+                    if kw in field:
+                        matched = True
+                        break
+                elif rule.match_type == "exact":
+                    if kw == field:
+                        matched = True
+                        break
+                elif rule.match_type == "regex":
+                    try:
+                        if re.search(rule.keyword, field, re.IGNORECASE):
+                            matched = True
+                            break
+                    except re.error:
+                        pass
+
+            if matched:
+                total_adj += rule.score_adjustment
+
+        return total_adj
 
     async def _check_access_lists(self, session, mail_from: str, client_ip: str) -> str | None:
         """Check whitelist/blacklist. Returns 'whitelist', 'blacklist', or None."""

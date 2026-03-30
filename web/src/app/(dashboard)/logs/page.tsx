@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { fetchLogs } from "@/lib/api";
+import { LearnButtons } from "@/components/logs/learn-buttons";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -142,12 +143,13 @@ export default async function LogsPage({
               <th className="px-4 py-3 font-medium text-right">Score</th>
               <th className="px-4 py-3 font-medium">Action</th>
               <th className="px-4 py-3 font-medium">Client IP</th>
+              <th className="px-4 py-3 font-medium">Learn</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
             {data.items.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
                   No log entries found.
                 </td>
               </tr>
@@ -193,6 +195,9 @@ export default async function LogsPage({
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-400">
                   {log.client_ip ?? "-"}
+                </td>
+                <td className="px-4 py-3">
+                  <LearnButtons logId={log.id} />
                 </td>
               </tr>
             ))}

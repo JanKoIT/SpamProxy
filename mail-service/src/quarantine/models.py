@@ -212,3 +212,16 @@ class RspamdPeer(Base):
     total_synced = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class KeywordRule(Base):
+    __tablename__ = "keyword_rules"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    keyword = Column(String(255), nullable=False)
+    match_type = Column(String(20), nullable=False, default="contains")  # contains, exact, regex
+    match_field = Column(String(20), nullable=False, default="subject")  # subject, body, from, any
+    score_adjustment = Column(Float, nullable=False, default=0.0)
+    description = Column(Text)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

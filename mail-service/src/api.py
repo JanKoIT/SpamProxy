@@ -14,7 +14,7 @@ from .db import async_session
 from .quarantine.manager import QuarantineManager
 from .quarantine.models import (
     MailLog, Quarantine, StatsHourly, Domain, Setting, User,
-    SmtpCredential, DkimKey, RblList, AccessList, ScoringRule, SenderDomain,
+    SmtpCredential, DkimKey, RblList, AccessList, ScoringRule, SenderDomain, KeywordRule,
     RspamdPeer,
 )
 from .scanning.ai_classifier import AIClassifier
@@ -1558,3 +1558,160 @@ async def federation_learn(learn_type: str = Query(...), quarantine_id: str = Qu
     await _forward_learn_to_peers(raw_message, learn_type)
 
     return {"status": "ok", "type": learn_type}
+
+
+# --- Learn from Mail Log (mark delivered mail as spam/ham) ---
+
+@app.post("/api/mail-log/{log_id}/learn")
+async def learn_from_mail_log(log_id: UUID, learn_type: str = Query(...)):
+    """Learn spam or ham from a mail log entry.
+    Works for both quarantined and delivered mails.
+    For quarantined: uses raw_message from quarantine table.
+    For delivered: reconstructs a minimal message from log data."""
+    if learn_type not in ("spam", "ham"):
+        raise HTTPException(status_code=400, detail="learn_type must be 'spam' or 'ham'")
+
+    async with async_session() as session:
+        # Try quarantine first (has raw message)
+        result = await session.execute(
+            select(Quarantine).where(Quarantine.mail_log_id == log_id)
+        )
+        q = result.scalar_one_or_none()
+
+        if q and q.raw_message:
+            raw_message = q.raw_message
+        else:
+            # No raw message - reconstruct minimal message from log
+            result = await session.execute(
+                select(MailLog).where(MailLog.id == log_id)
+            )
+            ml = result.scalar_one_or_none()
+            if not ml:
+                raise HTTPException(status_code=404, detail="Mail log entry not found")
+
+            from email.mime.text import MIMEText
+            msg = MIMEText(f"[Reconstructed for learning] Subject: {ml.subject or ''}")
+            msg["From"] = ml.mail_from or ""
+            msg["To"] = ", ".join(ml.rcpt_to or [])
+            msg["Subject"] = ml.subject or ""
+            msg["Message-ID"] = ml.message_id or ""
+            raw_message = msg.as_bytes()
+
+        # Update mail log action
+        result = await session.execute(select(MailLog).where(MailLog.id == log_id))
+        ml = result.scalar_one_or_none()
+        if ml:
+            ml.action = "rejected" if learn_type == "spam" else "delivered"
+            await session.commit()
+
+    # Learn locally on rspamd
+    rspamd_url = settings.rspamd_url
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        headers = {}
+        if settings.rspamd_password:
+            headers["Password"] = settings.rspamd_password
+        endpoint = "learnspam" if learn_type == "spam" else "learnham"
+        try:
+            resp = await client.post(
+                f"{rspamd_url}/{endpoint}",
+                content=raw_message,
+                headers=headers,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            logger.warning("Local learn failed: %s", e)
+
+    # Forward to federation peers
+    await _forward_learn_to_peers(raw_message, learn_type)
+
+    return {"status": "ok", "type": learn_type, "mail_log_id": str(log_id)}
+
+
+# --- Keyword Rules ---
+
+class KeywordRuleRequest(BaseModel):
+    keyword: str
+    match_type: str = "contains"
+    match_field: str = "subject"
+    score_adjustment: float = 0.0
+    description: str | None = None
+    is_active: bool = True
+
+
+@app.get("/api/keyword-rules")
+async def list_keyword_rules():
+    async with async_session() as session:
+        result = await session.execute(
+            select(KeywordRule).order_by(KeywordRule.match_field, KeywordRule.keyword)
+        )
+        return [
+            {
+                "id": str(r.id),
+                "keyword": r.keyword,
+                "match_type": r.match_type,
+                "match_field": r.match_field,
+                "score_adjustment": r.score_adjustment,
+                "description": r.description,
+                "is_active": r.is_active,
+                "created_at": str(r.created_at),
+            }
+            for r in result.scalars()
+        ]
+
+
+@app.post("/api/keyword-rules")
+async def create_keyword_rule(req: KeywordRuleRequest):
+    async with async_session() as session:
+        rule = KeywordRule(
+            keyword=req.keyword,
+            match_type=req.match_type,
+            match_field=req.match_field,
+            score_adjustment=req.score_adjustment,
+            description=req.description,
+            is_active=req.is_active,
+        )
+        session.add(rule)
+        await session.commit()
+        await session.refresh(rule)
+        return {"id": str(rule.id)}
+
+
+@app.put("/api/keyword-rules/{rule_id}")
+async def update_keyword_rule(rule_id: UUID, req: KeywordRuleRequest):
+    async with async_session() as session:
+        result = await session.execute(select(KeywordRule).where(KeywordRule.id == rule_id))
+        rule = result.scalar_one_or_none()
+        if not rule:
+            raise HTTPException(status_code=404, detail="Not found")
+        rule.keyword = req.keyword
+        rule.match_type = req.match_type
+        rule.match_field = req.match_field
+        rule.score_adjustment = req.score_adjustment
+        rule.description = req.description
+        rule.is_active = req.is_active
+        await session.commit()
+        return {"status": "ok"}
+
+
+@app.put("/api/keyword-rules/{rule_id}/toggle")
+async def toggle_keyword_rule(rule_id: UUID):
+    async with async_session() as session:
+        result = await session.execute(select(KeywordRule).where(KeywordRule.id == rule_id))
+        rule = result.scalar_one_or_none()
+        if not rule:
+            raise HTTPException(status_code=404, detail="Not found")
+        rule.is_active = not rule.is_active
+        await session.commit()
+        return {"status": "ok", "is_active": rule.is_active}
+
+
+@app.delete("/api/keyword-rules/{rule_id}")
+async def delete_keyword_rule(rule_id: UUID):
+    async with async_session() as session:
+        result = await session.execute(select(KeywordRule).where(KeywordRule.id == rule_id))
+        rule = result.scalar_one_or_none()
+        if not rule:
+            raise HTTPException(status_code=404, detail="Not found")
+        await session.delete(rule)
+        await session.commit()
+        return {"status": "ok"}

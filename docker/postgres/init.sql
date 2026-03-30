@@ -223,6 +223,27 @@ CREATE TABLE rspamd_peers (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Keyword scoring rules
+CREATE TABLE keyword_rules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    keyword VARCHAR(255) NOT NULL,
+    match_type VARCHAR(20) NOT NULL DEFAULT 'contains' CHECK (match_type IN ('contains', 'exact', 'regex')),
+    match_field VARCHAR(20) NOT NULL DEFAULT 'subject' CHECK (match_field IN ('subject', 'body', 'from', 'any')),
+    score_adjustment REAL NOT NULL DEFAULT 0.0,
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(keyword, match_type, match_field)
+);
+
+INSERT INTO keyword_rules (keyword, match_type, match_field, score_adjustment, description) VALUES
+    ('viagra', 'contains', 'any', 5.0, 'Typisches Spam-Keyword'),
+    ('casino', 'contains', 'any', 4.0, 'Gambling-Spam'),
+    ('lottery', 'contains', 'any', 5.0, 'Lottery-Scam'),
+    ('winner', 'contains', 'subject', 3.0, 'Prize-Scam Betreff'),
+    ('urgent', 'contains', 'subject', 2.0, 'Dringlichkeits-Spam'),
+    ('unsubscribe', 'contains', 'body', -0.5, 'Hat Abmeldelink (eher Newsletter)');
+
 -- Insert default settings
 INSERT INTO settings (key, value, category, description) VALUES
     ('spam_quarantine_threshold', '5.0', 'scanning', 'Score above which mail is quarantined'),
