@@ -114,7 +114,7 @@ docker compose up -d
 
 ```bash
 # 1. Projekt auf Server bringen
-git clone https://github.com/DEIN-USER/SpamProxy.git /opt/spamproxy
+git clone https://github.com/JanKoIT/SpamProxy.git /opt/spamproxy
 cd /opt/spamproxy
 
 # 2. Erstinstallation (generiert sichere Passwoerter)
