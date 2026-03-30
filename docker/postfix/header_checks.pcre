@@ -1,0 +1,2 @@
+# Route quarantined mail to the quarantine transport
+/^X-Spam-Quarantine:\s+yes/i FILTER quarantine:[mail-service]:8024

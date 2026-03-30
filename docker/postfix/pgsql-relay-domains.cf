@@ -1,0 +1,9 @@
+# Postfix PostgreSQL lookup for relay domains
+# Returns the domain if it's active in the database
+
+hosts = postgres
+user = POSTGRES_USER_PLACEHOLDER
+password = POSTGRES_PASSWORD_PLACEHOLDER
+dbname = POSTGRES_DB_PLACEHOLDER
+
+query = SELECT domain FROM domains WHERE domain = '%s' AND is_active = true LIMIT 1

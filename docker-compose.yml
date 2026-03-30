@@ -1,0 +1,154 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-spamproxy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-spamproxy}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-spamproxy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  clamav:
+    image: clamav/clamav:latest
+    restart: unless-stopped
+    volumes:
+      - clamav_data:/var/lib/clamav
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "3"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  rspamd:
+    image: rspamd/rspamd:latest
+    restart: unless-stopped
+    volumes:
+      - ./docker/rspamd/local.d:/etc/rspamd/local.d
+      - rspamd_data:/var/lib/rspamd
+      - dkim_keys:/var/lib/rspamd/dkim
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+    depends_on:
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+    ports:
+      - "11334:11334"
+
+  postfix:
+    build:
+      context: ./docker/postfix
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PROXY_HOSTNAME: ${PROXY_HOSTNAME:-proxy.example.com}
+      POSTGRES_USER: ${POSTGRES_USER:-spamproxy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-spamproxy}
+      POSTGRES_HOST: postgres
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - postfix_queue:/var/spool/postfix
+      - certs:/etc/ssl/certs/custom
+      - postfix_logs:/var/log/postfix
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "25:25"
+      - "587:587"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rspamd:
+        condition: service_started
+      mail-service:
+        condition: service_started
+
+  mail-service:
+    build:
+      context: ./mail-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - postfix_logs:/var/log/postfix:ro
+      - dkim_keys:/var/lib/rspamd/dkim
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://spamproxy:changeme@postgres:5432/spamproxy}
+      RSPAMD_URL: ${RSPAMD_URL:-http://rspamd:11333}
+      RSPAMD_PASSWORD: ${RSPAMD_PASSWORD:-}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_URL: ${AI_URL:-http://ollama:11434}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      AI_ENABLED: ${AI_ENABLED:-true}
+      SMTP_BACKEND_HOST: ${SMTP_BACKEND_HOST:-mail.example.com}
+      SMTP_BACKEND_PORT: ${SMTP_BACKEND_PORT:-25}
+      QUARANTINE_RETENTION_DAYS: ${QUARANTINE_RETENTION_DAYS:-30}
+      TZ: ${TZ:-Europe/Berlin}
+    ports:
+      - "8025:8025"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://spamproxy:changeme@postgres:5432/spamproxy}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-generate-a-secret-here}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      MAIL_SERVICE_URL: http://mail-service:8025
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3080:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mail-service:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  rspamd_data:
+  clamav_data:
+  dkim_keys:
+  postfix_queue:
+  postfix_logs:
+  certs:

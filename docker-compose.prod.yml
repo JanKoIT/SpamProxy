@@ -1,0 +1,43 @@
+# Production override - use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  postgres:
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports: []
+
+  redis:
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    ports: []
+
+  clamav:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  rspamd:
+    restart: always
+    ports:
+      # 11334: Controller/WebUI - nur localhost (via Nginx fuer Admin)
+      - "127.0.0.1:11334:11334"
+      # 11333: Worker - Federation Peers brauchen Zugriff fuer learn_spam/learn_ham
+      - "${FEDERATION_BIND:-0.0.0.0}:11333:11333"
+      # 11335: Fuzzy Worker - Federation Peers brauchen Zugriff fuer Fuzzy-Hash-Sync
+      - "${FEDERATION_BIND:-0.0.0.0}:11335:11335"
+
+  postfix:
+    restart: always
+
+  mail-service:
+    restart: always
+    # API nur intern + localhost (fuer Federation-Endpoints via Nginx)
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  web:
+    restart: always
+    ports:
+      - "127.0.0.1:3080:3000"

@@ -1,0 +1,82 @@
+# SpamProxy Postfix Configuration
+# Transparent MX relay with rspamd milter
+
+# Basic settings
+smtpd_banner = $myhostname ESMTP SpamProxy
+biff = no
+append_dot_mydomain = no
+readme_directory = no
+compatibility_level = 3.6
+
+# Hostname - overridden by entrypoint
+myhostname = proxy.example.com
+mydomain = example.com
+myorigin = $mydomain
+mydestination =
+mynetworks = 127.0.0.0/8 [::1]/128 172.16.0.0/12 10.0.0.0/8 192.168.0.0/16
+
+# Relay configuration - accept mail for domains managed in database
+# Domains and their backends are configured via web interface
+relay_domains = pgsql:/etc/postfix/pgsql-relay-domains.cf
+relay_recipient_maps =
+transport_maps = pgsql:/etc/postfix/pgsql-transport.cf
+
+# TLS inbound
+smtpd_tls_cert_file = /etc/ssl/certs/postfix.pem
+smtpd_tls_key_file = /etc/ssl/private/postfix.key
+smtpd_tls_security_level = may
+smtpd_tls_auth_only = yes
+smtpd_tls_loglevel = 1
+smtpd_tls_protocols = >=TLSv1.2
+
+# TLS outbound
+smtp_tls_security_level = may
+smtp_tls_loglevel = 1
+smtp_tls_protocols = >=TLSv1.2
+
+# SASL authentication for outbound submission (port 587)
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = inet:mail-service:12345
+smtpd_sasl_security_options = noanonymous
+smtpd_sasl_local_domain = $mydomain
+
+# Restrictions
+smtpd_helo_required = yes
+smtpd_helo_restrictions =
+    permit_mynetworks,
+    reject_invalid_helo_hostname,
+    reject_non_fqdn_helo_hostname
+
+smtpd_sender_restrictions =
+    permit_mynetworks,
+    reject_non_fqdn_sender,
+    reject_unknown_sender_domain
+
+smtpd_recipient_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_unauth_destination,
+    reject_non_fqdn_recipient,
+    reject_unknown_recipient_domain
+
+# rspamd milter
+smtpd_milters = inet:rspamd:11332
+non_smtpd_milters = $smtpd_milters
+milter_protocol = 6
+milter_default_action = accept
+milter_mail_macros = i {mail_addr} {client_addr} {client_name} {auth_authen}
+
+# Content filter - ALL mail goes through mail-service for logging + quarantine
+content_filter = scan:mail-service:8024
+
+# Message size limit (25MB)
+message_size_limit = 26214400
+
+# Queue settings
+maximal_queue_lifetime = 5d
+bounce_queue_lifetime = 5d
+queue_run_delay = 300s
+
+# Logging
+maillog_file = /var/log/postfix/mail.log

@@ -1,0 +1,8 @@
+[project]
+name = "spamproxy-smtp"
+version = "1.0.0"
+description = "AntiSpam SMTP Proxy with rspamd and AI classification"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100

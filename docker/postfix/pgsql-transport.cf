@@ -1,0 +1,9 @@
+# Postfix PostgreSQL lookup for per-domain transport routing
+# Maps recipient domain → smtp:[backend_host]:backend_port
+
+hosts = postgres
+user = POSTGRES_USER_PLACEHOLDER
+password = POSTGRES_PASSWORD_PLACEHOLDER
+dbname = POSTGRES_DB_PLACEHOLDER
+
+query = SELECT 'smtp:[' || backend_host || ']:' || backend_port FROM domains WHERE domain = '%s' AND is_active = true LIMIT 1

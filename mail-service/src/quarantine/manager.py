@@ -1,0 +1,130 @@
+import email
+import logging
+from datetime import datetime, timedelta, timezone
+from email.policy import default as default_policy
+from uuid import UUID
+
+import smtplib
+from sqlalchemy import select, update, delete, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..config import settings
+from .models import Quarantine, MailLog, Domain
+
+logger = logging.getLogger(__name__)
+
+
+class QuarantineManager:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def store(
+        self,
+        mail_log_id: UUID,
+        raw_message: bytes,
+    ) -> Quarantine:
+        parsed = email.message_from_bytes(raw_message, policy=default_policy)
+        headers = {k: str(v) for k, v in parsed.items()}
+        body_preview = ""
+        if parsed.get_body(preferencelist=("plain",)):
+            body_part = parsed.get_body(preferencelist=("plain",))
+            body_preview = body_part.get_content()[:1000] if body_part else ""
+
+        entry = Quarantine(
+            mail_log_id=mail_log_id,
+            raw_message=raw_message,
+            parsed_headers=headers,
+            body_preview=body_preview,
+            status="pending",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.quarantine_retention_days),
+        )
+        self.session.add(entry)
+        await self.session.commit()
+        await self.session.refresh(entry)
+        logger.info("Quarantined message %s", mail_log_id)
+        return entry
+
+    async def approve(self, quarantine_id: UUID, reviewer_id: UUID | None = None) -> bool:
+        result = await self.session.execute(
+            select(Quarantine).where(Quarantine.id == quarantine_id)
+        )
+        entry = result.scalar_one_or_none()
+        if not entry or entry.status != "pending":
+            return False
+
+        # Get the mail log to find the recipient and backend
+        result = await self.session.execute(
+            select(MailLog).where(MailLog.id == entry.mail_log_id)
+        )
+        log_entry = result.scalar_one_or_none()
+        if not log_entry:
+            return False
+
+        # Deliver the message to the backend
+        try:
+            rcpt_domain = log_entry.rcpt_to[0].split("@")[1] if log_entry.rcpt_to else None
+            if rcpt_domain:
+                domain_result = await self.session.execute(
+                    select(Domain).where(Domain.domain == rcpt_domain, Domain.is_active.is_(True))
+                )
+                domain = domain_result.scalar_one_or_none()
+                backend_host = domain.backend_host if domain else settings.smtp_backend_host
+                backend_port = domain.backend_port if domain else settings.smtp_backend_port
+            else:
+                backend_host = settings.smtp_backend_host
+                backend_port = settings.smtp_backend_port
+
+            with smtplib.SMTP(backend_host, backend_port, timeout=30) as smtp:
+                smtp.sendmail(
+                    log_entry.mail_from or "",
+                    log_entry.rcpt_to,
+                    entry.raw_message,
+                )
+        except Exception:
+            logger.exception("Failed to deliver quarantined message %s", quarantine_id)
+            return False
+
+        entry.status = "approved"
+        entry.reviewed_by = reviewer_id
+        entry.reviewed_at = datetime.now(timezone.utc)
+
+        log_entry.action = "delivered"
+
+        await self.session.commit()
+        logger.info("Released quarantined message %s", quarantine_id)
+        return True
+
+    async def reject(self, quarantine_id: UUID, reviewer_id: UUID | None = None) -> bool:
+        result = await self.session.execute(
+            select(Quarantine).where(Quarantine.id == quarantine_id)
+        )
+        entry = result.scalar_one_or_none()
+        if not entry or entry.status != "pending":
+            return False
+
+        entry.status = "rejected"
+        entry.reviewed_by = reviewer_id
+        entry.reviewed_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        logger.info("Rejected quarantined message %s", quarantine_id)
+        return True
+
+    async def cleanup_expired(self) -> int:
+        now = datetime.now(timezone.utc)
+        result = await self.session.execute(
+            delete(Quarantine).where(
+                Quarantine.expires_at < now,
+                Quarantine.status == "pending",
+            )
+        )
+        await self.session.commit()
+        count = result.rowcount
+        if count > 0:
+            logger.info("Cleaned up %d expired quarantine entries", count)
+        return count
+
+    async def get_pending_count(self) -> int:
+        result = await self.session.execute(
+            select(func.count()).where(Quarantine.status == "pending")
+        )
+        return result.scalar() or 0
