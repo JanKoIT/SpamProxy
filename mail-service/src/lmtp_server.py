@@ -13,6 +13,7 @@ from .config import settings
 from .db import async_session
 from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule
 from .quarantine.manager import QuarantineManager
+from .scanning.ai_classifier import AIClassifier
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,9 @@ def extract_client_ip(parsed_msg) -> str:
 
 
 class ContentFilterHandler:
+    def __init__(self):
+        self.ai_classifier = AIClassifier() if settings.ai_enabled else None
+
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
         envelope.rcpt_tos.append(address)
         return "250 OK"
@@ -122,6 +126,22 @@ class ContentFilterHandler:
                     )
                     final_score += keyword_adj
 
+                # AI classification for grey zone
+                ai_score = None
+                ai_reason = ""
+                if (
+                    self.ai_classifier
+                    and settings.ai_enabled
+                    and settings.ai_grey_zone_min <= final_score <= settings.ai_grey_zone_max
+                ):
+                    try:
+                        ai_score, ai_reason = await self.ai_classifier.classify(raw_message)
+                        # Weighted: 60% rspamd+rules, 40% AI
+                        final_score = (final_score * 0.6) + (ai_score * 0.4)
+                        logger.info("AI score=%.1f reason=%s final=%.1f", ai_score, ai_reason, final_score)
+                    except Exception:
+                        logger.warning("AI classification failed, using rspamd score only")
+
                 if final_score >= REJECT_THRESHOLD:
                     action = "rejected"
                 elif final_score >= QUARANTINE_THRESHOLD:
@@ -138,6 +158,7 @@ class ContentFilterHandler:
                     client_ip=client_ip,
                     size_bytes=len(raw_message),
                     rspamd_score=rspamd_score,
+                    ai_score=ai_score,
                     final_score=final_score,
                     rspamd_symbols=rspamd_symbols if rspamd_symbols else None,
                     action=action,
