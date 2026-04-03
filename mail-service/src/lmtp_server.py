@@ -126,6 +126,10 @@ class ContentFilterHandler:
                     )
                     final_score += keyword_adj
 
+                    # Apply mailing list / Google Groups scoring
+                    list_adj = self._check_mailing_list(parsed)
+                    final_score += list_adj
+
                 # AI classification for grey zone
                 ai_score = None
                 ai_reason = ""
@@ -198,6 +202,52 @@ class ContentFilterHandler:
             except Exception:
                 logger.exception("Re-injection also failed")
             return "250 OK (error fallback)"
+
+    def _check_mailing_list(self, parsed_msg) -> float:
+        """Check for Google Groups and mailing list headers, return score adjustment."""
+        score = 0.0
+
+        is_google_group = False
+        is_mailing_list = False
+
+        # Google Groups detection
+        if parsed_msg.get("X-Google-Group-Id"):
+            is_google_group = True
+        list_unsub = str(parsed_msg.get("List-Unsubscribe", "")).lower()
+        if "googlegroups" in list_unsub:
+            is_google_group = True
+        list_post = str(parsed_msg.get("List-Post", "")).lower()
+        if "googlegroups" in list_post:
+            is_google_group = True
+
+        # General mailing list detection
+        if parsed_msg.get("List-Id") or parsed_msg.get("List-Unsubscribe"):
+            is_mailing_list = True
+        precedence = str(parsed_msg.get("Precedence", "")).lower()
+        if precedence in ("bulk", "list"):
+            is_mailing_list = True
+
+        # Google Groups + freemail sender = very likely spam
+        if is_google_group:
+            from_header = str(parsed_msg.get("From", "")).lower()
+            freemail_domains = [
+                "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+                "mail.ru", "yandex.ru", "qq.com", "163.com", "aol.com",
+                "protonmail.com", "icloud.com",
+            ]
+            for domain in freemail_domains:
+                if domain in from_header:
+                    score += 6.0  # Google Groups + freemail = spam
+                    logger.info("Google Groups spam detected (freemail sender)")
+                    break
+            else:
+                score += 2.0  # Google Groups from non-freemail, still suspicious
+
+        # Bulk mail without proper List-Id
+        if precedence == "bulk" and not parsed_msg.get("List-Id"):
+            score += 3.0
+
+        return score
 
     async def _apply_keyword_rules(self, session, subject: str, mail_from: str, parsed_msg) -> float:
         """Apply keyword scoring rules."""

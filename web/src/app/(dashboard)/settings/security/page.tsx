@@ -9,6 +9,8 @@ import {
   Key,
   Loader2,
   ExternalLink,
+  Mail,
+  Users,
 } from "lucide-react";
 
 interface SettingValue {
@@ -285,6 +287,28 @@ export default function SecurityPage() {
           settingKey="ai_enabled"
           value={boolVal("ai_enabled")}
           loading={savingKey === "ai_enabled"}
+          onToggle={handleToggle}
+        />
+
+        {/* Google Groups Blocking */}
+        <ToggleCard
+          icon={<Users className="h-5 w-5 text-orange-400" />}
+          title="Google Groups Spam"
+          description="Blocks spam from Google Groups (freemail senders via Groups get +6.0 score)"
+          settingKey="block_google_groups"
+          value={boolVal("block_google_groups")}
+          loading={savingKey === "block_google_groups"}
+          onToggle={handleToggle}
+        />
+
+        {/* Bulk Unsolicited */}
+        <ToggleCard
+          icon={<Mail className="h-5 w-5 text-yellow-400" />}
+          title="Bulk Mail Blocking"
+          description="Blocks unsolicited bulk mail without proper List-Id header (+3.0 score)"
+          settingKey="block_bulk_unsolicited"
+          value={boolVal("block_bulk_unsolicited")}
+          loading={savingKey === "block_bulk_unsolicited"}
           onToggle={handleToggle}
         />
 
