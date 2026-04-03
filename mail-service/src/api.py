@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc, text
@@ -39,6 +39,45 @@ ai_classifier = AIClassifier()
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "mail-service"}
+
+
+# --- Direct Learn Endpoint (for Dovecot/external scripts) ---
+
+@app.post("/api/learn/{learn_type}")
+async def learn_raw_message(learn_type: str, request: Request):
+    """Learn spam or ham from raw email body.
+    Used by Dovecot sieve scripts and dovecot-learn.sh.
+    Accepts raw email as request body (not JSON)."""
+    if learn_type not in ("spam", "ham"):
+        raise HTTPException(status_code=400, detail="learn_type must be 'spam' or 'ham'")
+
+    raw_message = await request.body()
+    if len(raw_message) < 50:
+        raise HTTPException(status_code=400, detail="Message too small")
+
+    # Learn locally on rspamd controller
+    endpoint = "learnspam" if learn_type == "spam" else "learnham"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            headers = {}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+            resp = await client.post(
+                f"{settings.rspamd_controller_url}/{endpoint}",
+                content=raw_message,
+                headers=headers,
+            )
+            resp.raise_for_status()
+    except Exception as e:
+        logger.warning("Direct learn %s failed: %s", learn_type, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Forward to federation peers
+    await _forward_learn_to_peers(raw_message, learn_type)
+
+    logger.info("Direct learn %s: %d bytes", learn_type, len(raw_message))
+    return {"status": "ok", "type": learn_type, "size": len(raw_message)}
+
 
 
 # --- Auth ---
