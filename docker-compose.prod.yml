@@ -33,4 +33,4 @@ services:
   web:
     restart: always
     ports:
-      - "127.0.0.1:${WEB_PORT:-3177}:3000"
+      - "${WEB_PORT:-3177}:3000"
