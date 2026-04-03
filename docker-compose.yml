@@ -61,8 +61,7 @@ services:
         condition: service_healthy
       clamav:
         condition: service_started
-    ports:
-      - "11334:11334"
+    # Ports nur intern - rspamd WebUI via Nginx oder: docker compose exec rspamd rspamadm ...
 
   postfix:
     build:
