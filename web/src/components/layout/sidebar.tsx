@@ -22,6 +22,7 @@ import {
   Send,
   Network,
   Type,
+  Database,
 } from "lucide-react";
 
 const navItems = [
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/settings/scoring", label: "Scoring", icon: TrendingUp },
   { href: "/settings/keywords", label: "Keywords", icon: Type },
   { href: "/settings/dkim", label: "DKIM", icon: Key },
+  { href: "/settings/bayes", label: "Bayes Training", icon: Database },
   { href: "/settings/ai-test", label: "AI Test", icon: Brain },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/users", label: "Outgoing Auth", icon: Users },

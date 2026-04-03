@@ -1805,3 +1805,49 @@ async def import_keyword_rules(req: KeywordImport):
 
         await session.commit()
         return {"status": "ok", "imported": imported, "skipped": skipped}
+
+
+# --- Bayes Training ---
+
+from .bayes_trainer import train_spam_monthly, train_ham_corpus, _get_last_trained
+
+@app.get("/api/bayes-training/status")
+async def bayes_training_status():
+    """Get Bayes training status."""
+    import os
+    data_dir = "/var/lib/spamproxy/bayes-training"
+    last_trained = _get_last_trained()
+    ham_trained = os.path.exists(f"{data_dir}/ham_trained")
+
+    # Get rspamd stat
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+            resp = await client.get(f"{settings.rspamd_url}/stat", headers=headers)
+            stat = resp.json() if resp.status_code == 200 else {}
+    except Exception:
+        stat = {}
+
+    return {
+        "last_spam_trained": last_trained or None,
+        "ham_corpus_trained": ham_trained,
+        "spam_source": "https://untroubled.org/spam/",
+        "ham_source": "SpamAssassin easy_ham corpus",
+        "rspamd_learned": stat.get("learned", 0),
+        "rspamd_ham_count": stat.get("ham_count", 0),
+        "rspamd_spam_count": stat.get("spam_count", 0),
+    }
+
+
+@app.post("/api/bayes-training/train-now")
+async def bayes_train_now():
+    """Manually trigger Bayes training."""
+    ham_count = await train_ham_corpus()
+    spam_count = await train_spam_monthly()
+    return {
+        "status": "ok",
+        "ham_learned": ham_count,
+        "spam_learned": spam_count,
+    }

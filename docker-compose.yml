@@ -99,6 +99,7 @@ services:
     volumes:
       - postfix_logs:/var/log/postfix:ro
       - dkim_keys:/var/lib/rspamd/dkim
+      - bayes_training:/var/lib/spamproxy/bayes-training
       - /etc/localtime:/etc/localtime:ro
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-spamproxy}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-spamproxy}
@@ -147,6 +148,7 @@ volumes:
   rspamd_data:
   clamav_data:
   dkim_keys:
+  bayes_training:
   postfix_queue:
   postfix_logs:
   certs:
