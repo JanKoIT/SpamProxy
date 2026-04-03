@@ -255,6 +255,70 @@ export default function BayesTrainingPage() {
             </div>
           </div>
 
+          {/* Dovecot Integration */}
+          <div className="rounded-lg border border-blue-500/20 bg-slate-900 p-5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-2">
+              <Download className="h-4 w-4 text-blue-400" />
+              Dovecot Integration
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Train rspamd from your Dovecot mail server. Users moving mails to/from the Junk
+              folder automatically trains the spam filter.
+            </p>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Method 1: Cron Script */}
+              <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+                <h4 className="text-sm font-semibold text-white mb-1">
+                  Method 1: Cron Script
+                </h4>
+                <p className="text-xs text-slate-400 mb-3">
+                  Scans Junk folders periodically and sends messages to SpamProxy for learning.
+                </p>
+                <button
+                  onClick={() => window.open("/api/dovecot/learn-script", "_blank")}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Download dovecot-learn.sh
+                </button>
+                <div className="mt-3 rounded bg-slate-950 p-3 text-xs font-mono text-slate-400 overflow-x-auto">
+                  <p className="text-slate-500"># Install on Dovecot server:</p>
+                  <p>chmod +x dovecot-learn.sh</p>
+                  <p>sudo mv dovecot-learn.sh /usr/local/bin/</p>
+                  <p className="mt-2 text-slate-500"># Add to cron (every 2 hours):</p>
+                  <p>crontab -e</p>
+                  <p className="text-green-400">0 */2 * * * /usr/local/bin/dovecot-learn.sh</p>
+                </div>
+              </div>
+
+              {/* Method 2: Sieve Kit */}
+              <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+                <h4 className="text-sm font-semibold text-white mb-1">
+                  Method 2: IMAPSieve (Real-time)
+                </h4>
+                <p className="text-xs text-slate-400 mb-3">
+                  Trains instantly when a user moves mail to/from the Junk folder in their email client.
+                </p>
+                <button
+                  onClick={() => window.open("/api/dovecot/sieve-kit", "_blank")}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-500 transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Download Sieve Kit (.tar.gz)
+                </button>
+                <div className="mt-3 rounded bg-slate-950 p-3 text-xs font-mono text-slate-400 overflow-x-auto">
+                  <p className="text-slate-500"># Install on Dovecot server:</p>
+                  <p>tar xzf dovecot-sieve-kit.tar.gz</p>
+                  <p>sudo cp dovecot-sieve/* /etc/dovecot/sieve/</p>
+                  <p>sudo sievec /etc/dovecot/sieve/*.sieve</p>
+                  <p className="text-slate-500"># Then configure Dovecot (see README.txt)</p>
+                  <p>sudo systemctl restart dovecot</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* How it works */}
           <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
             <h3 className="text-sm font-semibold text-white mb-3">
@@ -263,7 +327,7 @@ export default function BayesTrainingPage() {
             <ul className="space-y-2 text-sm text-slate-400">
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-0.5">1.</span>
-                Downloads monthly spam archives from untroubled.org (up to 1000 messages per month)
+                Downloads monthly spam archives from untroubled.org (~500 msgs/month)
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-0.5">2.</span>
@@ -271,15 +335,15 @@ export default function BayesTrainingPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-0.5">3.</span>
-                Feeds messages to rspamd via learn_spam/learn_ham API
+                Quarantine approve/reject actions train the filter
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-0.5">4.</span>
-                rspamd updates its Bayes classifier with the new data
+                Dovecot Junk folder moves train via API (cron or sieve)
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-0.5">5.</span>
-                Quarantine approve/reject actions also train the filter (and sync to federation peers)
+                All learning is synced to federation peers automatically
               </li>
             </ul>
           </div>

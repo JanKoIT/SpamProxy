@@ -1899,3 +1899,224 @@ async def bayes_train_now():
         "ham_learned": ham_count,
         "spam_learned": spam_count,
     }
+
+
+# --- Dovecot Script Downloads ---
+
+from fastapi.responses import PlainTextResponse
+
+
+@app.get("/api/dovecot/learn-script")
+async def download_dovecot_learn_script(
+    mail_dir: str = Query("/var/vmail"),
+    junk_folders: str = Query("Junk,Spam,.Junk,.Spam"),
+    max_age: int = Query(7),
+    learn_ham: bool = Query(False),
+):
+    """Generate a customized dovecot-learn.sh script with the correct SpamProxy URL."""
+    # Read the template script
+    import os
+    script_path = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "dovecot-learn.sh")
+    if not os.path.exists(script_path):
+        # Fallback: use the script from the project root
+        script_path = "/app/scripts/dovecot-learn.sh"
+
+    # Get proxy hostname from settings
+    async with async_session() as session:
+        result = await session.execute(select(Setting).where(Setting.key == "proxy_hostname"))
+        setting = result.scalar_one_or_none()
+        proxy_host = str(setting.value).strip('"') if setting and setting.value else "localhost"
+
+    api_url = f"http://{proxy_host}:8025"
+
+    script = f'''#!/bin/bash
+set -euo pipefail
+# SpamProxy Dovecot Junk Learner
+# Generated for: {proxy_host}
+# Download: curl -o dovecot-learn.sh "https://{proxy_host}/api/dovecot/learn-script"
+#
+# Cron (every 2 hours):
+#   0 */2 * * * /usr/local/bin/dovecot-learn.sh >> /var/log/spamproxy-learn.log 2>&1
+
+SPAMPROXY_URL="{api_url}"
+MAIL_DIR="{mail_dir}"
+JUNK_FOLDERS="{junk_folders}"
+MAX_AGE={max_age}
+MAX_MSGS=200
+LEARN_HAM={str(learn_ham).lower()}
+STATE_DIR="/var/lib/spamproxy/learn-state"
+
+log()  {{ echo "$(date '+%H:%M:%S') [learn] $1"; }}
+
+mkdir -p "$STATE_DIR"
+SPAM_LEARNED=0
+HAM_LEARNED=0
+SKIPPED=0
+
+is_processed() {{ [ -f "$STATE_DIR/${{2}}_${{1}}" ]; }}
+mark_processed() {{ touch "$STATE_DIR/${{2}}_${{1}}"; }}
+
+learn_message() {{
+    local file="$1" type="$2"
+    local hash=$(echo "$file" | md5sum | cut -d' ' -f1)
+    is_processed "$hash" "$type" && {{ SKIPPED=$((SKIPPED + 1)); return 0; }}
+
+    local code
+    code=$(curl -s -o /dev/null -w "%{{http_code}}" \\
+        -X POST "${{SPAMPROXY_URL}}/api/learn/${{type}}" \\
+        -H "Content-Type: application/octet-stream" \\
+        --data-binary "@${{file}}" \\
+        --max-time 30 2>/dev/null || echo "000")
+
+    if [ "$code" = "200" ]; then
+        mark_processed "$hash" "$type"
+        [ "$type" = "spam" ] && SPAM_LEARNED=$((SPAM_LEARNED + 1)) || HAM_LEARNED=$((HAM_LEARNED + 1))
+    fi
+}}
+
+log "=== Dovecot Junk Learner ==="
+log "SpamProxy: $SPAMPROXY_URL"
+log "Mail dir: $MAIL_DIR"
+
+[ ! -d "$MAIL_DIR" ] && {{ echo "ERROR: $MAIL_DIR not found"; exit 1; }}
+
+# Learn spam from Junk folders
+IFS=','
+for junk_name in $JUNK_FOLDERS; do
+    find "$MAIL_DIR" -type d \\( -name "$junk_name" -o -name ".$junk_name" \\) 2>/dev/null | while read -r folder; do
+        for subdir in cur new; do
+            [ -d "${{folder}}/${{subdir}}" ] || continue
+            log "Spam: ${{folder}}/${{subdir}}"
+            find "${{folder}}/${{subdir}}" -type f -mtime "-${{MAX_AGE}}" 2>/dev/null | head -n "$MAX_MSGS" | while read -r file; do
+                learn_message "$file" "spam"
+            done
+        done
+    done
+done
+
+# Learn ham from Inbox
+if [ "$LEARN_HAM" = "true" ]; then
+    find "$MAIL_DIR" -path "*/Maildir/cur" -type d 2>/dev/null | while read -r folder; do
+        skip=false
+        for jn in $JUNK_FOLDERS; do echo "$folder" | grep -qi "$jn" && skip=true; done
+        [ "$skip" = "true" ] && continue
+        log "Ham: $folder"
+        find "$folder" -type f -mtime "-${{MAX_AGE}}" 2>/dev/null | head -n "$MAX_MSGS" | while read -r file; do
+            learn_message "$file" "ham"
+        done
+    done
+fi
+
+# Cleanup old state
+find "$STATE_DIR" -type f -mtime +90 -delete 2>/dev/null || true
+
+log "Done: $SPAM_LEARNED spam, $HAM_LEARNED ham learned, $SKIPPED skipped"
+'''
+    return PlainTextResponse(script, media_type="text/x-shellscript", headers={
+        "Content-Disposition": "attachment; filename=dovecot-learn.sh",
+    })
+
+
+@app.get("/api/dovecot/sieve-kit")
+async def download_sieve_kit():
+    """Generate a customized sieve kit with the correct SpamProxy URL."""
+    import tarfile
+    import io
+
+    async with async_session() as session:
+        result = await session.execute(select(Setting).where(Setting.key == "proxy_hostname"))
+        setting = result.scalar_one_or_none()
+        proxy_host = str(setting.value).strip('"') if setting and setting.value else "localhost"
+
+    api_url = f"http://{proxy_host}:8025"
+
+    files = {
+        "learn-spam.sh": f'''#!/bin/bash
+SPAMPROXY_URL="{api_url}"
+exec curl -s -o /dev/null \\
+    -X POST "${{SPAMPROXY_URL}}/api/learn/spam" \\
+    -H "Content-Type: application/octet-stream" \\
+    --data-binary @- \\
+    --max-time 30
+''',
+        "learn-ham.sh": f'''#!/bin/bash
+SPAMPROXY_URL="{api_url}"
+exec curl -s -o /dev/null \\
+    -X POST "${{SPAMPROXY_URL}}/api/learn/ham" \\
+    -H "Content-Type: application/octet-stream" \\
+    --data-binary @- \\
+    --max-time 30
+''',
+        "learn-spam.sieve": '''require ["vnd.dovecot.pipe", "copy", "imapsieve", "environment", "variables"];
+if environment :matches "imap.cause" "*" {
+    pipe :copy "learn-spam.sh";
+}
+''',
+        "learn-ham.sieve": '''require ["vnd.dovecot.pipe", "copy", "imapsieve", "environment", "variables"];
+if environment :matches "imap.cause" "*" {
+    pipe :copy "learn-ham.sh";
+}
+''',
+        "README.txt": f'''SpamProxy Dovecot Sieve Kit
+===========================
+Generated for: {proxy_host}
+API URL: {api_url}
+
+Installation:
+1. Copy files to Dovecot sieve directory:
+   sudo cp learn-spam.sh learn-ham.sh /etc/dovecot/sieve/
+   sudo cp learn-spam.sieve learn-ham.sieve /etc/dovecot/sieve/
+   sudo chmod +x /etc/dovecot/sieve/learn-spam.sh /etc/dovecot/sieve/learn-ham.sh
+
+2. Compile sieve scripts:
+   sudo sievec /etc/dovecot/sieve/learn-spam.sieve
+   sudo sievec /etc/dovecot/sieve/learn-ham.sieve
+
+3. Add to /etc/dovecot/conf.d/90-sieve.conf:
+
+   protocol imap {{
+     mail_plugins = $mail_plugins imap_sieve
+   }}
+
+   plugin {{
+     sieve_plugins = sieve_imapsieve sieve_extprograms
+
+     imapsieve_mailbox1_name = Junk
+     imapsieve_mailbox1_causes = COPY APPEND
+     imapsieve_mailbox1_before = file:/etc/dovecot/sieve/learn-spam.sieve
+
+     imapsieve_mailbox2_name = *
+     imapsieve_mailbox2_from = Junk
+     imapsieve_mailbox2_causes = COPY
+     imapsieve_mailbox2_before = file:/etc/dovecot/sieve/learn-ham.sieve
+
+     sieve_pipe_bin_dir = /etc/dovecot/sieve
+     sieve_global_extensions = +vnd.dovecot.pipe +vnd.dovecot.environment
+   }}
+
+4. Restart Dovecot:
+   sudo systemctl restart dovecot
+
+How it works:
+- User moves mail to Junk folder -> learn-spam.sh sends it to SpamProxy
+- User moves mail from Junk folder -> learn-ham.sh sends it to SpamProxy
+- SpamProxy trains rspamd locally and syncs to federation peers
+''',
+    }
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, content in files.items():
+            data = content.encode()
+            info = tarfile.TarInfo(name=f"dovecot-sieve/{name}")
+            info.size = len(data)
+            info.mode = 0o755 if name.endswith(".sh") else 0o644
+            tar.addfile(info, io.BytesIO(data))
+    buf.seek(0)
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        buf,
+        media_type="application/gzip",
+        headers={"Content-Disposition": "attachment; filename=dovecot-sieve-kit.tar.gz"},
+    )
