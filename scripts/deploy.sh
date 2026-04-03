@@ -61,6 +61,10 @@ first_install() {
         warn "WICHTIG: Oeffne .env und setze PROXY_HOSTNAME und ADMIN_EMAIL"
     fi
 
+    # Stop and remove any existing containers
+    log "Raeume alte Container auf..."
+    $COMPOSE down --remove-orphans 2>/dev/null || true
+
     # Build and start
     log "Baue Container..."
     $COMPOSE build
