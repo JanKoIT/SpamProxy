@@ -38,12 +38,21 @@ interface DnsStatus {
 interface SenderDomain {
   id: string;
   domain: string;
-  verified: boolean;
-  active: boolean;
+  is_verified: boolean;
+  is_active: boolean;
   verification_method: string;
   verification_token?: string;
   description?: string;
   dns_status?: DnsStatus;
+  spf_status?: string;
+  spf_record?: string;
+  spf_includes_proxy?: boolean;
+  dkim_status?: string;
+  dkim_selector?: string;
+  dkim_record?: string;
+  mx_status?: string;
+  mx_records?: string[];
+  last_dns_check?: string;
   created_at?: string;
 }
 
@@ -477,7 +486,7 @@ function DomainCard({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {domain.verified ? (
+          {domain.is_verified ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 border border-green-500/30 px-2.5 py-0.5 text-xs font-medium text-green-400">
               <CheckCircle className="h-3 w-3" />
               Verifiziert
@@ -488,7 +497,7 @@ function DomainCard({
               Nicht verifiziert
             </span>
           )}
-          {domain.active ? (
+          {domain.is_active ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 border border-green-500/30 px-2.5 py-0.5 text-xs font-medium text-green-400">
               Aktiv
             </span>
@@ -592,7 +601,7 @@ function DomainCard({
       )}
 
       {/* Verification Token (only if not verified) */}
-      {!domain.verified && domain.verification_token && (
+      {!domain.is_verified && domain.verification_token && (
         <div className="rounded-lg border border-slate-700 bg-slate-950 p-4 space-y-3">
           <p className="text-sm font-medium text-slate-300 flex items-center gap-2">
             <Key className="h-4 w-4 text-yellow-400" />
@@ -668,16 +677,16 @@ function DomainCard({
           DNS pruefen
         </button>
 
-        {domain.verified && (
+        {domain.is_verified && (
           <button
             onClick={onToggle}
             className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-              domain.active
+              domain.is_active
                 ? "border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
                 : "border-green-500/30 text-green-400 hover:bg-green-500/10"
             }`}
           >
-            {domain.active ? "Deaktivieren" : "Aktivieren"}
+            {domain.is_active ? "Deaktivieren" : "Aktivieren"}
           </button>
         )}
 
