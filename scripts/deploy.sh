@@ -104,11 +104,13 @@ first_install() {
     fi
 
     # ── Cleanup ───────────────────────────────────────────────
-    log "Raeume alte Container auf..."
-    docker compose down --remove-orphans 2>/dev/null || true
-    $COMPOSE down --remove-orphans 2>/dev/null || true
+    log "Raeume alte Container und Daten auf..."
+    docker compose down --remove-orphans -v 2>/dev/null || true
+    $COMPOSE down --remove-orphans -v 2>/dev/null || true
     docker ps -a --filter "name=spamproxy" -q | xargs -r docker rm -f 2>/dev/null || true
     docker network rm spamproxy_default 2>/dev/null || true
+    # Remove all spamproxy volumes for clean DB init
+    docker volume ls -q --filter "name=spamproxy" | xargs -r docker volume rm 2>/dev/null || true
 
     log "Starte Docker-Daemon neu..."
     systemctl restart docker
@@ -130,6 +132,20 @@ first_install() {
         $COMPOSE exec -T postgres pg_isready -U spamproxy >/dev/null 2>&1 && break
         sleep 1
     done
+    sleep 3
+
+    # Update admin user with the configured email and password
+    log "Setze Admin-Zugangsdaten..."
+    $COMPOSE exec -T postgres psql -U spamproxy -d spamproxy -c "
+        UPDATE users SET
+            email = '$INPUT_EMAIL',
+            password_hash = crypt('$ADMIN_PASS', gen_salt('bf'))
+        WHERE role = 'admin';
+        -- Insert if no admin exists
+        INSERT INTO users (email, name, password_hash, role)
+        SELECT '$INPUT_EMAIL', 'Administrator', crypt('$ADMIN_PASS', gen_salt('bf')), 'admin'
+        WHERE NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin');
+    " 2>/dev/null || warn "Admin-Update fehlgeschlagen"
 
     # ── Nginx + TLS ───────────────────────────────────────────
     log "Konfiguriere Nginx..."
