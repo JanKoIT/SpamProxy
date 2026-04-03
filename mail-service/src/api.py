@@ -1908,110 +1908,18 @@ from fastapi.responses import PlainTextResponse
 
 @app.get("/api/dovecot/learn-script")
 async def download_dovecot_learn_script(
-    mail_dir: str = Query("/var/vmail"),
-    junk_folders: str = Query("Junk,Spam,.Junk,.Spam"),
+    users_file: str = Query("/etc/dovecot/users"),
+    junk_folders: str = Query("Junk,Spam,.Junk,.Spam,INBOX.Junk,INBOX.Spam"),
     max_age: int = Query(7),
-    learn_ham: bool = Query(False),
+    learn_ham: bool = Query(True),
 ):
-    """Generate a customized dovecot-learn.sh script with the correct SpamProxy URL."""
-    # Read the template script
-    import os
-    script_path = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "dovecot-learn.sh")
-    if not os.path.exists(script_path):
-        # Fallback: use the script from the project root
-        script_path = "/app/scripts/dovecot-learn.sh"
-
-    # Get proxy hostname from settings
+    """Generate a customized dovecot-learn.sh with correct SpamProxy URL."""
+    from .dovecot_scripts import generate_learn_script
     async with async_session() as session:
         result = await session.execute(select(Setting).where(Setting.key == "proxy_hostname"))
         setting = result.scalar_one_or_none()
         proxy_host = str(setting.value).strip('"') if setting and setting.value else "localhost"
-
-    api_url = f"http://{proxy_host}:8025"
-
-    script = f'''#!/bin/bash
-set -euo pipefail
-# SpamProxy Dovecot Junk Learner
-# Generated for: {proxy_host}
-# Download: curl -o dovecot-learn.sh "https://{proxy_host}/api/dovecot/learn-script"
-#
-# Cron (every 2 hours):
-#   0 */2 * * * /usr/local/bin/dovecot-learn.sh >> /var/log/spamproxy-learn.log 2>&1
-
-SPAMPROXY_URL="{api_url}"
-MAIL_DIR="{mail_dir}"
-JUNK_FOLDERS="{junk_folders}"
-MAX_AGE={max_age}
-MAX_MSGS=200
-LEARN_HAM={str(learn_ham).lower()}
-STATE_DIR="/var/lib/spamproxy/learn-state"
-
-log()  {{ echo "$(date '+%H:%M:%S') [learn] $1"; }}
-
-mkdir -p "$STATE_DIR"
-SPAM_LEARNED=0
-HAM_LEARNED=0
-SKIPPED=0
-
-is_processed() {{ [ -f "$STATE_DIR/${{2}}_${{1}}" ]; }}
-mark_processed() {{ touch "$STATE_DIR/${{2}}_${{1}}"; }}
-
-learn_message() {{
-    local file="$1" type="$2"
-    local hash=$(echo "$file" | md5sum | cut -d' ' -f1)
-    is_processed "$hash" "$type" && {{ SKIPPED=$((SKIPPED + 1)); return 0; }}
-
-    local code
-    code=$(curl -s -o /dev/null -w "%{{http_code}}" \\
-        -X POST "${{SPAMPROXY_URL}}/api/learn/${{type}}" \\
-        -H "Content-Type: application/octet-stream" \\
-        --data-binary "@${{file}}" \\
-        --max-time 30 2>/dev/null || echo "000")
-
-    if [ "$code" = "200" ]; then
-        mark_processed "$hash" "$type"
-        [ "$type" = "spam" ] && SPAM_LEARNED=$((SPAM_LEARNED + 1)) || HAM_LEARNED=$((HAM_LEARNED + 1))
-    fi
-}}
-
-log "=== Dovecot Junk Learner ==="
-log "SpamProxy: $SPAMPROXY_URL"
-log "Mail dir: $MAIL_DIR"
-
-[ ! -d "$MAIL_DIR" ] && {{ echo "ERROR: $MAIL_DIR not found"; exit 1; }}
-
-# Learn spam from Junk folders
-IFS=','
-for junk_name in $JUNK_FOLDERS; do
-    find "$MAIL_DIR" -type d \\( -name "$junk_name" -o -name ".$junk_name" \\) 2>/dev/null | while read -r folder; do
-        for subdir in cur new; do
-            [ -d "${{folder}}/${{subdir}}" ] || continue
-            log "Spam: ${{folder}}/${{subdir}}"
-            find "${{folder}}/${{subdir}}" -type f -mtime "-${{MAX_AGE}}" 2>/dev/null | head -n "$MAX_MSGS" | while read -r file; do
-                learn_message "$file" "spam"
-            done
-        done
-    done
-done
-
-# Learn ham from Inbox
-if [ "$LEARN_HAM" = "true" ]; then
-    find "$MAIL_DIR" -path "*/Maildir/cur" -type d 2>/dev/null | while read -r folder; do
-        skip=false
-        for jn in $JUNK_FOLDERS; do echo "$folder" | grep -qi "$jn" && skip=true; done
-        [ "$skip" = "true" ] && continue
-        log "Ham: $folder"
-        find "$folder" -type f -mtime "-${{MAX_AGE}}" 2>/dev/null | head -n "$MAX_MSGS" | while read -r file; do
-            learn_message "$file" "ham"
-        done
-    done
-fi
-
-# Cleanup old state
-find "$STATE_DIR" -type f -mtime +90 -delete 2>/dev/null || true
-
-log "Done: $SPAM_LEARNED spam, $HAM_LEARNED ham learned, $SKIPPED skipped"
-'''
+    script = generate_learn_script(proxy_host, users_file, junk_folders, max_age, learn_ham)
     return PlainTextResponse(script, media_type="text/x-shellscript", headers={
         "Content-Disposition": "attachment; filename=dovecot-learn.sh",
     })
