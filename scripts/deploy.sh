@@ -67,6 +67,21 @@ first_install() {
     $COMPOSE down --remove-orphans 2>/dev/null || true
     # Kill any remaining containers with spamproxy in the name
     docker ps -a --filter "name=spamproxy" -q | xargs -r docker rm -f 2>/dev/null || true
+    # Remove old network
+    docker network rm spamproxy_default 2>/dev/null || true
+
+    # Check and free required ports
+    for PORT in 25 587 3080; do
+        PID=$(ss -tlnp "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+        if [ -n "$PID" ]; then
+            PNAME=$(ps -p "$PID" -o comm= 2>/dev/null || echo "unknown")
+            warn "Port $PORT belegt von PID $PID ($PNAME) - stoppe..."
+            kill "$PID" 2>/dev/null || true
+            sleep 1
+            # Force kill if still running
+            kill -9 "$PID" 2>/dev/null || true
+        fi
+    done
 
     # Build and start
     log "Baue Container..."
