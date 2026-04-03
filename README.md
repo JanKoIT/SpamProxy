@@ -1,8 +1,8 @@
 # SpamProxy
 
-Transparenter AntiSpam-Proxy mit Postfix, rspamd, KI-Klassifizierung, ClamAV Virenscanner und Web-Interface.
+Transparent AntiSpam mail proxy with Postfix, rspamd, AI classification, ClamAV virus scanning and web interface.
 
-SpamProxy wird als MX vor den eigentlichen Mailserver geschaltet und filtert eingehende sowie ausgehende E-Mails. Spam wird in eine Quarantäne verschoben, wo Benutzer Mails freigeben oder ablehnen können.
+SpamProxy is placed as MX in front of your actual mail server and filters both incoming and outgoing emails. Spam is moved to a quarantine where users can approve or reject messages.
 
 ## Screenshots
 
@@ -11,70 +11,72 @@ SpamProxy wird als MX vor den eigentlichen Mailserver geschaltet und filtert ein
 | ![Login](docs/screenshots/login.png) | ![Dashboard](docs/screenshots/dashboard.png) |
 | Login | Dashboard |
 | ![Quarantine](docs/screenshots/quarantine.png) | ![Mail Log](docs/screenshots/mail-log.png) |
-| Quarantäne | Mail-Log |
+| Quarantine | Mail Log |
 | ![Postfix Log](docs/screenshots/postfix-log.png) | ![Security](docs/screenshots/security.png) |
-| Postfix-Log | Security & Scanning |
+| Postfix Log | Security & Scanning |
 | ![Scoring](docs/screenshots/scoring.png) | ![Blocklists](docs/screenshots/blocklists.png) |
-| Score-Anpassungen | DNS Blocklists |
+| Score Adjustments | DNS Blocklists |
 | ![Access Lists](docs/screenshots/access-lists.png) | ![DKIM](docs/screenshots/dkim.png) |
 | Whitelist / Blacklist | DKIM Keys |
 | ![AI Test](docs/screenshots/ai-test.png) | ![Sender Domains](docs/screenshots/sender-domains.png) |
-| AI Spam-Test | Absenderdomains |
+| AI Spam Test | Sender Domains |
 | ![Outgoing Auth](docs/screenshots/outgoing-auth.png) | ![Federation](docs/screenshots/federation.png) |
 | Outgoing SMTP Auth | Federation |
 | ![Domains](docs/screenshots/domains.png) | ![Settings](docs/screenshots/settings.png) |
-| Domain-Routing | Einstellungen |
+| Domain Routing | Settings |
 
 ## Features
 
-### Mail-Verarbeitung
-- **Postfix** als SMTP-Frontend (Port 25 inbound, Port 587 outbound mit SASL-Auth)
-- **rspamd** als Milter für Spam-Scoring (Bayes, Fuzzy-Hashing, DKIM/SPF/DMARC)
-- **KI-Klassifizierung** für Grey-Zone-Mails (OpenAI oder Ollama)
-- **ClamAV** Virenscanner
-- **Quarantäne** mit Approve/Reject im Web-Interface
-- **Content-Filter** loggt jede Mail und entscheidet: deliver / quarantine / reject
+### Mail Processing
+- **Postfix** as SMTP frontend (port 25 inbound, port 587 outbound with SASL auth)
+- **rspamd** as milter for spam scoring (Bayes, fuzzy hashing, DKIM/SPF/DMARC)
+- **AI classification** for grey-zone mails (OpenAI or Ollama)
+- **ClamAV** virus scanner
+- **Quarantine** with approve/reject in web interface
+- **Content filter** logs every mail and decides: deliver / quarantine / reject
 
-### DNS & Authentifizierung
-- **SPF-Verifizierung** eingehender Mails
-- **DKIM-Signierung** ausgehender Mails (Key-Generator im Web-Interface)
-- **DNS Blocklists** (Spamhaus, Barracuda, SpamCop, SORBS u.a.)
-- **Absenderdomain-Verifizierung** für Outgoing (DNS-Token oder manuell)
-- **SMTP-Auth** für ausgehenden Versand (SASL über Dovecot-Protokoll)
+### DNS & Authentication
+- **SPF verification** of incoming mails
+- **DKIM signing** of outgoing mails (key generator in web interface)
+- **DNS blocklists** (Spamhaus, Barracuda, SpamCop, SORBS, etc.)
+- **Sender domain verification** for outgoing mail (DNS token or manual)
+- **SMTP auth** for outgoing delivery (SASL via Dovecot protocol)
 
-### Scoring & Filterung
-- **Whitelist/Blacklist** für Domains, E-Mails, IPs, CIDR-Netze
-- **TLD-basierte Score-Anpassungen** (z.B. .ru +3.0, .de -1.0)
-- **Domain-basierte Scoring-Regeln**
-- **Per-Domain Backend-Routing** (jede Domain kann einen eigenen Mailserver haben)
+### Scoring & Filtering
+- **Whitelist/Blacklist** for domains, emails, IPs, CIDR networks
+- **TLD-based score adjustments** (e.g. .ru +3.0, .de -1.0)
+- **Domain-based scoring rules**
+- **Keyword-based scoring** with import/export
+- **Per-domain backend routing** (each domain can have its own mail server)
 
 ### Federation
-- **Bayes-Learning-Sync** zwischen mehreren SpamProxy/rspamd-Instanzen
-- **Fuzzy-Hash-Austausch** für Spam-Fingerprints
-- Push/Pull/Bidirektionaler Modus
-- Verbindungstest im Web-Interface
+- **Bayes learning sync** between multiple SpamProxy/rspamd instances
+- **Fuzzy hash sharing** for spam fingerprints
+- Push/Pull/Bidirectional mode
+- Connection testing in web interface
 
-### Web-Interface
-- **Dashboard** mit Echtzeit-Statistiken und Charts
-- **Quarantäne-Management** (Liste, Vorschau, Approve/Reject, Bulk-Actions)
-- **Mail-Log** mit Filter und Suche
-- **Postfix-Log** mit Auto-Refresh und Farbhervorhebung
-- **Domain-Verwaltung** (Inbound-Routing pro Domain)
-- **Security-Einstellungen** (ClamAV, RBL, SPF, AI, DKIM toggles)
-- **Blocklist-Verwaltung** (DNS-Blocklists hinzufügen/entfernen)
-- **White-/Blacklist** (Domains, IPs, E-Mails)
-- **Scoring-Regeln** (TLD/Domain-basiert)
-- **DKIM-Key-Generator** mit DNS-Record-Anzeige
-- **AI-Test** (Test-Mails mit Vorlagen klassifizieren)
-- **Absenderdomain-Verifizierung** mit SPF/DKIM/MX-Checks
-- **Outgoing-Auth-Verwaltung** (SMTP-Credentials)
-- **Federation** (rspamd-Peers verwalten)
-- **Allgemeine Einstellungen** (Thresholds, AI-Config, etc.)
+### Web Interface
+- **Dashboard** with real-time statistics and charts
+- **Quarantine management** (list, preview, approve/reject, bulk actions)
+- **Mail log** with filters and search
+- **Postfix log** with auto-refresh and color highlighting
+- **Domain management** (inbound routing per domain)
+- **Security settings** (ClamAV, RBL, SPF, AI, DKIM toggles)
+- **Blocklist management** (add/remove DNS blocklists)
+- **Whitelist/Blacklist** (domains, IPs, emails)
+- **Scoring rules** (TLD/domain-based)
+- **Keyword rules** with import/export
+- **DKIM key generator** with DNS record display
+- **AI test** (classify test mails with templates)
+- **Sender domain verification** with SPF/DKIM/MX checks
+- **Outgoing auth management** (SMTP credentials)
+- **Federation** (manage rspamd peers)
+- **General settings** (thresholds, AI config, etc.)
 
-## Architektur
+## Architecture
 
 ```
-Internet ──► Port 25 ──► Postfix ──► rspamd (Milter) ──► Content-Filter (Python)
+Internet ──► Port 25 ──► Postfix ──► rspamd (Milter) ──► Content Filter (Python)
                                                               │
                                                     ┌────────┼────────┐
                                                     ▼        ▼        ▼
@@ -84,12 +86,12 @@ Internet ──► Port 25 ──► Postfix ──► rspamd (Milter) ──►
                                                Backend    PostgreSQL
                                               Mailserver    (DB)
                                                               │
-Internet ──► Port 587 ──► Postfix (SASL) ──► rspamd ──► Content-Filter
+Internet ──► Port 587 ──► Postfix (SASL) ──► rspamd ──► Content Filter
              (Submission)                                     │
-                                                      Domain-Check
-                                                      (verifiziert?)
+                                                      Domain Check
+                                                      (verified?)
 
-Browser ──► Port 443 ──► Nginx ──► Next.js Web-Interface
+Browser ──► Port 443 ──► Nginx ──► Next.js Web Interface
                                        │
                                        ▼
                                    mail-service (FastAPI)
@@ -98,170 +100,166 @@ Browser ──► Port 443 ──► Nginx ──► Next.js Web-Interface
                                    PostgreSQL
 ```
 
-### Container
+### Containers
 
-| Service | Image | Ports | Funktion |
+| Service | Image | Ports | Purpose |
 |---|---|---|---|
-| postfix | Custom (Debian) | 25, 587 | SMTP-Relay mit rspamd-Milter |
-| rspamd | rspamd/rspamd | 11333*, 11334*, 11335* | Spam-Scanner |
-| mail-service | Custom (Python) | 8024*, 8025*, 12345* | Content-Filter, API, SASL |
-| web | Custom (Next.js) | 3080* | Web-Interface |
-| postgres | PostgreSQL 17 | - | Datenbank |
-| redis | Redis 7 | - | rspamd-Backend (Bayes, Fuzzy) |
-| clamav | ClamAV | - | Virenscanner |
+| postfix | Custom (Debian) | 25, 587 | SMTP relay with rspamd milter |
+| rspamd | rspamd/rspamd | 11333*, 11334*, 11335* | Spam scanner |
+| mail-service | Custom (Python) | 8024*, 8025*, 12345* | Content filter, API, SASL |
+| web | Custom (Next.js) | 3177* | Web interface |
+| postgres | PostgreSQL 17 | - | Database |
+| redis | Redis 7 | - | rspamd backend (Bayes, fuzzy) |
+| clamav | ClamAV | - | Virus scanner |
 
-\* nur intern oder via Nginx
+\* internal only or via Nginx
 
-## Quick Start (Entwicklung)
+## Quick Start (Development)
 
 ```bash
 cp .env.example .env
-# .env anpassen
+# Edit .env
 docker compose up -d
-# Web-Interface: http://localhost:3080
+# Web interface: http://localhost:3177
 # Login: admin@example.com / changeme
 ```
 
 ## Production Deployment
 
-### Voraussetzungen
+### Prerequisites
 
-- VPS mit min. 2 GB RAM, 20 GB Disk
-- Docker + Docker Compose
-- Nginx
-- Domain mit DNS-Zugriff
+- VPS with min. 2 GB RAM, 20 GB disk
+- Domain with DNS access
+
+Docker, Nginx and Certbot are installed automatically by the setup script.
 
 ### Installation
 
 ```bash
-# 1. Projekt auf Server bringen
+# 1. Clone to server
 git clone https://github.com/JanKoIT/SpamProxy.git /opt/spamproxy
 cd /opt/spamproxy
 
-# 2. Erstinstallation (generiert sichere Passwoerter)
+# 2. Run interactive setup (installs dependencies, configures everything)
 ./scripts/deploy.sh first-install
 
-# 3. .env anpassen
-nano .env
-# Setze: PROXY_HOSTNAME, ADMIN_EMAIL, AI_API_KEY
-
-# 4. Nginx + TLS einrichten
-sudo cp docker/nginx/spamproxy.conf /etc/nginx/sites-available/spamproxy
-sudo nano /etc/nginx/sites-available/spamproxy  # Domain anpassen
-sudo ln -s /etc/nginx/sites-available/spamproxy /etc/nginx/sites-enabled/
-sudo certbot --nginx -d mail.example.com
-sudo systemctl reload nginx
-
-# 5. Backups einrichten
-sudo ./scripts/setup-cron.sh
-
-# 6. DNS konfigurieren (bei deinem DNS-Provider)
-# A-Record:   mail.example.com → VPS-IP
-# MX-Record:  example.com → 10 mail.example.com
+# 3. Set up DNS at your provider
+# A record:   mail.example.com → VPS-IP
+# MX record:  example.com → 10 mail.example.com
 # SPF:        example.com TXT "v=spf1 a:mail.example.com ~all"
+
+# 4. Set up automated backups
+sudo ./scripts/setup-cron.sh
 ```
+
+The setup wizard will prompt for hostname, admin email, password, and AI API key. It automatically:
+- Generates secure passwords
+- Installs Docker, Nginx, Certbot
+- Builds and starts all containers
+- Configures Nginx with TLS (Let's Encrypt)
+- Sets up the firewall
 
 ### Update
 
 ```bash
 cd /opt/spamproxy
-git pull
 ./scripts/deploy.sh update
 ```
 
-Das Update-Script:
-1. Erstellt automatisch ein DB-Backup
-2. Baut geänderte Container neu
-3. Führt ein Rolling-Update durch (minimale Downtime)
+The update script:
+1. Automatically pulls latest code from git
+2. Creates a database backup
+3. Rebuilds changed containers
+4. Performs a rolling update (minimal downtime)
 
 ### Backup
 
 ```bash
-# Manuelles Backup
-./scripts/backup.sh full        # Alles (DB + DKIM + Redis + Config)
-./scripts/backup.sh db          # Nur Datenbank
+# Manual backup
+./scripts/backup.sh full        # Everything (DB + DKIM + Redis + config)
+./scripts/backup.sh db          # Database only
 
-# Automatische Backups einrichten
-sudo ./scripts/setup-cron.sh    # Täglich 02:00 full, alle 6h DB
+# Set up automated backups
+sudo ./scripts/setup-cron.sh    # Daily 02:00 full, every 6h DB
 
 # Restore
 ./scripts/restore.sh backups/spamproxy_full_20260330.tar.gz
-./scripts/restore.sh backup.tar.gz --component db    # Nur DB
+./scripts/restore.sh backup.tar.gz --component db    # DB only
 ```
 
 ### Federation
 
-Mehrere SpamProxy-Instanzen verbinden:
+Connect multiple SpamProxy instances:
 
 ```bash
-# Auf Server A: Peer B hinzufuegen
+# On Server A: add Peer B
 ./scripts/deploy.sh federation-add 5.6.7.8 "Server-B"
 
-# Auf Server B: Peer A hinzufuegen
+# On Server B: add Peer A
 ./scripts/deploy.sh federation-add 1.2.3.4 "Server-A"
 
-# Dann im Web-Interface unter Settings > Federation die Peers konfigurieren
+# Then configure peers in web interface under Settings > Federation
 ```
 
-### Verwaltung
+### Management
 
 ```bash
-./scripts/deploy.sh status           # Service-Status
-./scripts/deploy.sh logs             # Alle Logs
-./scripts/deploy.sh logs postfix     # Nur Postfix
-./scripts/deploy.sh backup           # Manuelles Backup
-./scripts/deploy.sh federation-list  # Federation-Peers
+./scripts/deploy.sh status           # Service status
+./scripts/deploy.sh logs             # All logs
+./scripts/deploy.sh logs postfix     # Postfix only
+./scripts/deploy.sh backup           # Manual backup
+./scripts/deploy.sh federation-list  # Federation peers
 ```
 
-## Konfiguration
+## Configuration
 
-### .env Variablen
+### .env Variables
 
-| Variable | Beschreibung | Default |
+| Variable | Description | Default |
 |---|---|---|
-| `PROXY_HOSTNAME` | Hostname des Proxy-Servers | proxy.example.com |
-| `POSTGRES_PASSWORD` | PostgreSQL-Passwort | changeme |
-| `NEXTAUTH_SECRET` | Session-Secret | (generiert) |
-| `ADMIN_EMAIL` | Admin-Login E-Mail | admin@example.com |
-| `ADMIN_PASSWORD` | Admin-Passwort (Erstlogin) | changeme |
-| `AI_PROVIDER` | openai oder ollama | openai |
-| `AI_API_KEY` | OpenAI API-Key | - |
-| `AI_MODEL` | KI-Modell | gpt-4o-mini |
-| `QUARANTINE_RETENTION_DAYS` | Quarantäne-Aufbewahrung | 30 |
-| `TZ` | Zeitzone | Europe/Berlin |
-| `FEDERATION_BIND` | Bind-IP für Federation | 0.0.0.0 |
+| `PROXY_HOSTNAME` | Proxy server hostname | proxy.example.com |
+| `POSTGRES_PASSWORD` | PostgreSQL password | changeme |
+| `NEXTAUTH_SECRET` | Session secret | (generated) |
+| `ADMIN_EMAIL` | Admin login email | admin@example.com |
+| `ADMIN_PASSWORD` | Admin password (first login) | changeme |
+| `AI_PROVIDER` | openai or ollama | openai |
+| `AI_API_KEY` | OpenAI API key | - |
+| `AI_MODEL` | AI model | gpt-4o-mini |
+| `QUARANTINE_RETENTION_DAYS` | Quarantine retention | 30 |
+| `TZ` | Timezone | Europe/Berlin |
+| `WEB_PORT` | Web interface port | 3177 |
 
-### Web-Interface Einstellungen
+### Web Interface Settings
 
-Alles weitere wird im Web-Interface konfiguriert:
-- Spam-Thresholds (Quarantäne ab Score 5, Reject ab 10)
-- AI Grey-Zone (Score 3-7 löst KI-Analyse aus)
-- ClamAV, RBL, SPF, DKIM ein/ausschalten
-- Blocklists verwalten
-- Scoring-Regeln anpassen
-- Domains und Backend-Server zuordnen
+Everything else is configured in the web interface:
+- Spam thresholds (quarantine at score 5, reject at 10)
+- AI grey zone (score 3-7 triggers AI analysis)
+- ClamAV, RBL, SPF, DKIM on/off toggles
+- Manage blocklists
+- Adjust scoring rules and keywords
+- Map domains to backend servers
 
-## Sicherheit
+## Security
 
-- Alle internen Ports (DB, Redis, rspamd, API) sind nicht von außen erreichbar
-- Web-Interface nur via Nginx/TLS
-- HSTS, X-Frame-Options, CSP Headers
-- Rate-Limiting auf Web und Federation
-- bcrypt Passwort-Hashing
-- Federation-Ports per UFW auf Peer-IPs beschränkt
-- Absenderdomains müssen für Outgoing verifiziert werden
+- All internal ports (DB, Redis, rspamd, API) are not externally accessible
+- Web interface only via Nginx/TLS
+- HSTS, X-Frame-Options, CSP headers
+- Rate limiting on web and federation endpoints
+- bcrypt password hashing
+- Federation ports restricted to peer IPs via UFW
+- Sender domains must be verified for outgoing mail
 
 ## Tech Stack
 
 - **SMTP**: Postfix
-- **Spam-Scanner**: rspamd
-- **Virus-Scanner**: ClamAV
+- **Spam Scanner**: rspamd
+- **Virus Scanner**: ClamAV
 - **Backend**: Python 3.12, FastAPI, SQLAlchemy, aiosmtpd
 - **Frontend**: Next.js 15, TypeScript, Tailwind CSS, Recharts
-- **Datenbank**: PostgreSQL 17
+- **Database**: PostgreSQL 17
 - **Cache**: Redis 7
 - **Deployment**: Docker Compose
 
-## Lizenz
+## License
 
 MIT

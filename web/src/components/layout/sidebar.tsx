@@ -39,7 +39,7 @@ const navItems = [
   { href: "/settings/ai-test", label: "AI Test", icon: Brain },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/users", label: "Outgoing Auth", icon: Users },
-  { href: "/settings/sender-domains", label: "Absenderdomains", icon: Send },
+  { href: "/settings/sender-domains", label: "Sender Domains", icon: Send },
   { href: "/settings/federation", label: "Federation", icon: Network },
 ];
 

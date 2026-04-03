@@ -80,7 +80,7 @@ function statusLabel(status: string) {
     case "invalid":
       return "Ungueltig";
     default:
-      return "Nicht geprueft";
+      return "Not checked";
   }
 }
 
@@ -175,7 +175,7 @@ export default function SenderDomainsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.detail || "Verifizierung fehlgeschlagen");
+        alert(data.detail || "Verification failed");
       }
       await fetchDomains();
     } finally {
@@ -209,10 +209,10 @@ export default function SenderDomainsPage() {
         <div>
           <h1 className="flex items-center gap-3 text-2xl font-bold text-white">
             <Send className="h-7 w-7 text-blue-400" />
-            Absenderdomains
+            Sender Domains
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Verifizierte Domains fuer ausgehenden E-Mail-Versand
+            Verified domains for outgoing email delivery
           </p>
         </div>
         <button
@@ -223,7 +223,7 @@ export default function SenderDomainsPage() {
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Domain hinzufuegen
+          Add Domain
         </button>
       </div>
 
@@ -232,9 +232,9 @@ export default function SenderDomainsPage() {
         <div className="flex gap-3">
           <Shield className="h-5 w-5 shrink-0 text-blue-400 mt-0.5" />
           <p>
-            Nur verifizierte und aktive Domains koennen fuer ausgehende E-Mails
-            verwendet werden. Jede Domain muss per DNS-Eintrag oder manuell
-            verifiziert werden. SPF und DKIM muessen korrekt konfiguriert sein.
+            Only verified and active domains can be used for outgoing emails.
+            be used for outgoing emails. Each domain must be verified via DNS or manually.
+            SPF and DKIM should be configured correctly.
           </p>
         </div>
       </div>
@@ -244,7 +244,7 @@ export default function SenderDomainsPage() {
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-white">
-              Neue Domain hinzufuegen
+              Neue Add Domain
             </h2>
             <button
               onClick={() => {
@@ -274,7 +274,7 @@ export default function SenderDomainsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Verifizierungsmethode
+                  Verification Method
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
@@ -285,7 +285,7 @@ export default function SenderDomainsPage() {
                       onChange={() => setNewMethod("dns")}
                       className="accent-blue-500"
                     />
-                    DNS-Verifizierung
+                    DNS Verification
                   </label>
                   <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                     <input
@@ -295,20 +295,20 @@ export default function SenderDomainsPage() {
                       onChange={() => setNewMethod("manual")}
                       className="accent-blue-500"
                     />
-                    Manuelle Verifizierung
+                    Manual Verification
                   </label>
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Beschreibung (optional)
+                  Description (optional)
                 </label>
                 <input
                   type="text"
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="z.B. Hauptdomain fuer Newsletter"
+                  placeholder="e.g. Main domain for newsletters"
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -322,7 +322,7 @@ export default function SenderDomainsPage() {
                   {addLoading && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
-                  Domain hinzufuegen
+                  Add Domain
                 </button>
               </div>
             </>
@@ -332,7 +332,7 @@ export default function SenderDomainsPage() {
               <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
                 <div className="flex items-center gap-2 text-green-300 font-medium mb-2">
                   <CheckCircle className="h-5 w-5" />
-                  Domain &quot;{createdDomain.domain}&quot; wurde erstellt
+                  Domain &quot;{createdDomain.domain}&quot; has been created
                 </div>
               </div>
 
@@ -340,7 +340,7 @@ export default function SenderDomainsPage() {
                 <div className="space-y-3">
                   <p className="text-sm text-slate-300">
                     <Key className="inline h-4 w-4 mr-1 text-yellow-400" />
-                    Verifizierungstoken:
+                    Verification Token:
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 rounded-lg bg-slate-950 border border-slate-700 px-4 py-3 text-sm text-green-300 font-mono break-all">
@@ -363,15 +363,15 @@ export default function SenderDomainsPage() {
                     </button>
                   </div>
                   <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-200">
-                    Erstelle einen TXT-Record fuer{" "}
+                    Create a TXT record for{" "}
                     <code className="font-mono text-yellow-300">
                       {createdDomain.domain}
                     </code>{" "}
-                    oder{" "}
+                    or{" "}
                     <code className="font-mono text-yellow-300">
                       _spamproxy.{createdDomain.domain}
                     </code>{" "}
-                    mit dem obigen Token als Wert.
+                    with the token above as value.
                   </div>
                 </div>
               )}
@@ -384,7 +384,7 @@ export default function SenderDomainsPage() {
                   }}
                   className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 transition-colors"
                 >
-                  Schliessen
+                  Close
                 </button>
               </div>
             </div>
@@ -404,10 +404,10 @@ export default function SenderDomainsPage() {
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-12 text-center">
           <Globe className="mx-auto h-12 w-12 text-slate-600" />
           <h3 className="mt-4 text-lg font-medium text-white">
-            Keine Absenderdomains
+            No Sender Domains
           </h3>
           <p className="mt-2 text-sm text-slate-400">
-            Fuege eine Domain hinzu, um ausgehende E-Mails zu versenden.
+            Add a domain to start sending outgoing emails.
           </p>
         </div>
       )}
@@ -489,12 +489,12 @@ function DomainCard({
           {domain.is_verified ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 border border-green-500/30 px-2.5 py-0.5 text-xs font-medium text-green-400">
               <CheckCircle className="h-3 w-3" />
-              Verifiziert
+              Verified
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 px-2.5 py-0.5 text-xs font-medium text-yellow-400">
               <AlertTriangle className="h-3 w-3" />
-              Nicht verifiziert
+              Not Verified
             </span>
           )}
           {domain.is_active ? (
@@ -605,7 +605,7 @@ function DomainCard({
         <div className="rounded-lg border border-slate-700 bg-slate-950 p-4 space-y-3">
           <p className="text-sm font-medium text-slate-300 flex items-center gap-2">
             <Key className="h-4 w-4 text-yellow-400" />
-            Verifizierungstoken
+            Verification Token
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-4 py-2.5 text-sm text-green-300 font-mono break-all">
@@ -625,13 +625,13 @@ function DomainCard({
             </button>
           </div>
           <p className="text-xs text-slate-400">
-            Erstelle einen TXT-Record fuer{" "}
+            Create a TXT record for{" "}
             <code className="font-mono text-slate-300">{domain.domain}</code>{" "}
-            oder{" "}
+            or{" "}
             <code className="font-mono text-slate-300">
               _spamproxy.{domain.domain}
             </code>{" "}
-            mit dem obigen Token als Wert.
+            with the token above as value.
           </p>
           <div className="flex gap-2">
             <button
@@ -644,7 +644,7 @@ function DomainCard({
               ) : (
                 <CheckCircle className="h-4 w-4" />
               )}
-              DNS verifizieren
+              Verify DNS
             </button>
             <button
               onClick={onManualVerify}
@@ -656,7 +656,7 @@ function DomainCard({
               ) : (
                 <CheckCircle className="h-4 w-4" />
               )}
-              Manuell freischalten
+              Verify Manually
             </button>
           </div>
         </div>
@@ -674,7 +674,7 @@ function DomainCard({
           ) : (
             <RefreshCw className="h-4 w-4" />
           )}
-          DNS pruefen
+          Check DNS
         </button>
 
         {domain.is_verified && (
@@ -686,7 +686,7 @@ function DomainCard({
                 : "border-green-500/30 text-green-400 hover:bg-green-500/10"
             }`}
           >
-            {domain.is_active ? "Deaktivieren" : "Aktivieren"}
+            {domain.is_active ? "Deactivate" : "Activate"}
           </button>
         )}
 
@@ -696,22 +696,22 @@ function DomainCard({
             className="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
           >
             <Trash2 className="h-4 w-4" />
-            Loeschen
+            Delete
           </button>
         ) : (
           <div className="flex items-center gap-2 ml-auto">
-            <span className="text-sm text-red-400">Wirklich loeschen?</span>
+            <span className="text-sm text-red-400">Confirm delete?</span>
             <button
               onClick={onDelete}
               className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 transition-colors"
             >
-              Ja, loeschen
+              Yes, delete
             </button>
             <button
               onClick={onDeleteCancel}
               className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
             >
-              Abbrechen
+              Cancel
             </button>
           </div>
         )}
