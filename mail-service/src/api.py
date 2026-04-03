@@ -1560,8 +1560,8 @@ async def federation_learn(learn_type: str = Query(...), quarantine_id: str = Qu
     else:
         raise HTTPException(status_code=400, detail="quarantine_id required")
 
-    # Learn locally
-    rspamd_client = settings.rspamd_url
+    # Learn locally (controller port)
+    rspamd_client = settings.rspamd_controller_url
     async with httpx.AsyncClient(timeout=30.0) as client:
         headers = {}
         if settings.rspamd_password:
@@ -1627,8 +1627,8 @@ async def learn_from_mail_log(log_id: UUID, learn_type: str = Query(...)):
             ml.action = "rejected" if learn_type == "spam" else "delivered"
             await session.commit()
 
-    # Learn locally on rspamd
-    rspamd_url = settings.rspamd_url
+    # Learn locally on rspamd (controller port)
+    rspamd_url = settings.rspamd_controller_url
     async with httpx.AsyncClient(timeout=30.0) as client:
         headers = {}
         if settings.rspamd_password:
@@ -1825,7 +1825,7 @@ async def bayes_training_status():
             headers = {}
             if settings.rspamd_password:
                 headers["Password"] = settings.rspamd_password
-            resp = await client.get(f"{settings.rspamd_url}/stat", headers=headers)
+            resp = await client.get(f"{settings.rspamd_controller_url}/stat", headers=headers)
             stat = resp.json() if resp.status_code == 200 else {}
     except Exception:
         stat = {}

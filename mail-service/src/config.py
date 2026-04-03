@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     # rspamd
     rspamd_url: str = "http://rspamd:11333"
+    rspamd_controller_url: str = "http://rspamd:11334"
     rspamd_password: str = ""
 
     # AI

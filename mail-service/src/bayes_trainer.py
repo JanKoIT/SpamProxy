@@ -80,8 +80,8 @@ async def _download_and_extract(url: str, dest_dir: str) -> int:
 
 
 async def _learn_directory(directory: str, learn_type: str, max_messages: int = 500) -> int:
-    """Send messages from directory to rspamd for learning."""
-    rspamd_url = settings.rspamd_url
+    """Send messages from directory to rspamd for learning (via controller)."""
+    rspamd_url = settings.rspamd_controller_url
     endpoint = "learnspam" if learn_type == "spam" else "learnham"
     learned = 0
 
