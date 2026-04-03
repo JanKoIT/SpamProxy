@@ -120,7 +120,7 @@ export default function SmtpCredentialsPage() {
         if (!res.ok) throw new Error("Failed to update credential");
       } else {
         if (!form.password) {
-          setError("Passwort ist erforderlich");
+          setError("Password is required");
           setSaving(false);
           return;
         }
@@ -160,7 +160,7 @@ export default function SmtpCredentialsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Outgoing SMTP Auth</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Credentials f&uuml;r authentifizierten Mail-Versand &uuml;ber Port 587
+            Credentials for authenticated mail delivery via port 587
           </p>
         </div>
         <button
@@ -169,15 +169,15 @@ export default function SmtpCredentialsPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
-          Neues Credential
+          New Credential
         </button>
       </div>
 
       {/* Info Banner */}
       <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
-        <strong>SMTP Relay:</strong> Benutzer authentifizieren sich mit diesen
-        Credentials auf Port 587 (STARTTLS) um ausgehende Mails zu versenden.
-        Die Mails werden ebenfalls durch rspamd gescannt.
+        <strong>SMTP Relay:</strong> Users authenticate with these
+        Credentials on port 587 (STARTTLS) for sending outgoing mail.
+        Outgoing mail is also scanned by rspamd.
       </div>
 
       {error && (
@@ -193,7 +193,7 @@ export default function SmtpCredentialsPage() {
             <tr className="border-b border-slate-800 text-left text-slate-400">
               <th className="px-4 py-3 font-medium">Username</th>
               <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Erlaubte Absender</th>
+              <th className="px-4 py-3 font-medium">Allowed Senders</th>
               <th className="px-4 py-3 font-medium">Limit/h</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
@@ -210,7 +210,7 @@ export default function SmtpCredentialsPage() {
             {!loading && credentials.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
-                  Noch keine SMTP-Credentials konfiguriert.
+                  No SMTP credentials configured yet.
                 </td>
               </tr>
             )}
@@ -241,7 +241,7 @@ export default function SmtpCredentialsPage() {
                       ))}
                     </div>
                   ) : (
-                    <span className="text-slate-500">Alle</span>
+                    <span className="text-slate-500">All</span>
                   )}
                 </td>
                 <td className="px-4 py-3 font-mono text-slate-300">
@@ -255,7 +255,7 @@ export default function SmtpCredentialsPage() {
                         : "border-slate-600 bg-slate-700/50 text-slate-400"
                     }`}
                   >
-                    {c.is_active ? "Aktiv" : "Inaktiv"}
+                    {c.is_active ? "Active" : "Inactive"}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
@@ -264,7 +264,7 @@ export default function SmtpCredentialsPage() {
                       type="button"
                       onClick={() => openEdit(c)}
                       className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-                      title="Bearbeiten"
+                      title="Edit"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -282,7 +282,7 @@ export default function SmtpCredentialsPage() {
                           type="button"
                           onClick={() => setDeleteConfirm(null)}
                           className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 transition-colors"
-                          title="Abbrechen"
+                          title="Cancel"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -311,7 +311,7 @@ export default function SmtpCredentialsPage() {
           <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">
-                {editId ? "Credential bearbeiten" : "Neues Credential"}
+                {editId ? "Edit Credential" : "New Credential"}
               </h2>
               <button
                 type="button"
@@ -338,7 +338,7 @@ export default function SmtpCredentialsPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300">
-                  Passwort {editId && "(leer = nicht \u00e4ndern)"}
+                  Password {editId && "(leave empty to keep current)"}
                 </label>
                 <div className="relative">
                   <input
@@ -347,7 +347,7 @@ export default function SmtpCredentialsPage() {
                     onChange={(e) =>
                       setForm({ ...form, password: e.target.value })
                     }
-                    placeholder={editId ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "Passwort eingeben"}
+                    placeholder={editId ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "Enter password"}
                     className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 pr-10 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <button
@@ -366,7 +366,7 @@ export default function SmtpCredentialsPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300">
-                  Anzeigename
+                  Display Name
                 </label>
                 <input
                   value={form.display_name}
@@ -380,7 +380,7 @@ export default function SmtpCredentialsPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300">
-                  Erlaubte Absenderadressen (kommagetrennt, leer = alle)
+                  Allowed sender addresses (comma-separated, empty = all)
                 </label>
                 <input
                   value={form.allowed_from}
@@ -395,7 +395,7 @@ export default function SmtpCredentialsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-300">
-                    Max. Mails/Stunde
+                    Max. Mails/Hour
                   </label>
                   <input
                     type="number"
@@ -431,7 +431,7 @@ export default function SmtpCredentialsPage() {
                 onClick={() => setShowDialog(false)}
                 className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-800"
               >
-                Abbrechen
+                Cancel
               </button>
               <button
                 type="button"
@@ -440,7 +440,7 @@ export default function SmtpCredentialsPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {editId ? "Speichern" : "Erstellen"}
+                {editId ? "Save" : "Create"}
               </button>
             </div>
           </div>
