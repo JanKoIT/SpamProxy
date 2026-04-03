@@ -61,9 +61,12 @@ first_install() {
         warn "WICHTIG: Oeffne .env und setze PROXY_HOSTNAME und ADMIN_EMAIL"
     fi
 
-    # Stop and remove any existing containers
+    # Stop and remove ALL existing spamproxy containers (any compose config)
     log "Raeume alte Container auf..."
+    docker compose down --remove-orphans 2>/dev/null || true
     $COMPOSE down --remove-orphans 2>/dev/null || true
+    # Kill any remaining containers with spamproxy in the name
+    docker ps -a --filter "name=spamproxy" -q | xargs -r docker rm -f 2>/dev/null || true
 
     # Build and start
     log "Baue Container..."
