@@ -134,7 +134,7 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - "3080:3000"
+      - "${WEB_PORT:-3177}:3000"
     depends_on:
       postgres:
         condition: service_healthy
