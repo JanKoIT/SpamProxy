@@ -17,6 +17,10 @@ interface TrainingStatus {
   ham_corpus_trained: boolean;
   spam_source: string;
   ham_source: string;
+  months_total: number;
+  months_trained: number;
+  months_remaining: number;
+  trained_months: string[];
   rspamd_learned: number;
   rspamd_ham_count: number;
   rspamd_spam_count: number;
@@ -146,35 +150,82 @@ export default function BayesTrainingPage() {
             </div>
           </div>
 
+          {/* Training Progress */}
+          <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-3">
+              <XCircle className="h-4 w-4 text-red-400" />
+              Spam Corpus Training Progress
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-400">
+                  {status.months_trained} / {status.months_total} months trained
+                </span>
+                <span className="text-white font-mono">
+                  {status.months_total > 0
+                    ? Math.round((status.months_trained / status.months_total) * 100)
+                    : 0}%
+                </span>
+              </div>
+              <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-red-500 to-purple-500 transition-all"
+                  style={{
+                    width: `${status.months_total > 0
+                      ? (status.months_trained / status.months_total) * 100
+                      : 0}%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Jan 2024</span>
+                <span>
+                  {status.months_remaining > 0
+                    ? `${status.months_remaining} months remaining (3 per run)`
+                    : "All months complete"}
+                </span>
+                <span>Present</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <span>Source:</span>
+                <a
+                  href="https://untroubled.org/spam/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  untroubled.org/spam
+                </a>
+                <span className="text-slate-600">|</span>
+                <span>Last: {status.last_spam_trained || "Never"}</span>
+                <span className="text-slate-600">|</span>
+                <span>~500 msgs/month</span>
+              </div>
+            </div>
+          </div>
+
           {/* Training Sources */}
           <div className="grid grid-cols-2 gap-4">
-            {/* Spam Source */}
+            {/* Trained Months */}
             <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-3">
-                <XCircle className="h-4 w-4 text-red-400" />
-                Spam Corpus
+              <h3 className="text-sm font-semibold text-white mb-3">
+                Trained Months
               </h3>
-              <div className="space-y-2 text-sm">
-                <p className="text-slate-400">
-                  Source:{" "}
-                  <a
-                    href="https://untroubled.org/spam/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline"
-                  >
-                    untroubled.org/spam
-                  </a>
-                </p>
-                <p className="text-slate-400">
-                  Last trained:{" "}
-                  <span className="text-white">
-                    {status.last_spam_trained || "Never"}
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                {status.trained_months.length > 0 ? (
+                  status.trained_months.map((m) => (
+                    <span
+                      key={m}
+                      className="rounded bg-green-500/10 border border-green-500/20 px-2 py-0.5 text-xs font-mono text-green-400"
+                    >
+                      {m}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-slate-500">
+                    No months trained yet. Click &quot;Train Now&quot; to start.
                   </span>
-                </p>
-                <p className="text-slate-400">
-                  Schedule: Monthly (previous month&apos;s archive)
-                </p>
+                )}
               </div>
             </div>
 

@@ -132,46 +132,96 @@ async def _learn_directory(directory: str, learn_type: str, max_messages: int = 
     return learned
 
 
-async def train_spam_monthly():
-    """Download and train from the latest untroubled.org spam archive."""
-    now = datetime.now(timezone.utc)
-    # Train previous month (current month may be incomplete)
-    if now.month == 1:
-        target_year = now.year - 1
-        target_month = 12
-    else:
-        target_year = now.year
-        target_month = now.month - 1
-
-    month_str = f"{target_year}-{target_month:02d}"
-    last = _get_last_trained()
-
-    if last >= month_str:
-        logger.info("Bayes already trained for %s, skipping", month_str)
-        return 0
-
-    url = f"{SPAM_BASE_URL}/{month_str}.7z"
-    dest = f"{DATA_DIR}/spam-{month_str}"
-
+def _get_trained_months() -> set[str]:
+    """Get all months that have been trained."""
+    trained_file = f"{DATA_DIR}/trained_months.txt"
     try:
-        count = await _download_and_extract(url, dest)
-        if count == 0:
-            logger.warning("No spam files extracted for %s", month_str)
-            return 0
+        return set(Path(trained_file).read_text().strip().split("\n"))
+    except FileNotFoundError:
+        return set()
 
-        learned = await _learn_directory(dest, "spam", max_messages=1000)
-        logger.info("Bayes trained %d spam messages from %s", learned, month_str)
 
-        # Only mark as trained if we actually learned something
-        if learned > 0:
-            _set_last_trained(month_str)
-        return learned
-    except Exception:
-        logger.exception("Spam training failed for %s", month_str)
+def _mark_month_trained(month: str):
+    trained_file = f"{DATA_DIR}/trained_months.txt"
+    os.makedirs(DATA_DIR, exist_ok=True)
+    months = _get_trained_months()
+    months.add(month)
+    Path(trained_file).write_text("\n".join(sorted(months)))
+
+
+def _generate_months(start_year: int, start_month: int) -> list[str]:
+    """Generate list of YYYY-MM strings from start to last complete month."""
+    now = datetime.now(timezone.utc)
+    # Up to previous month (current month may be incomplete)
+    if now.month == 1:
+        end_year, end_month = now.year - 1, 12
+    else:
+        end_year, end_month = now.year, now.month - 1
+
+    months = []
+    y, m = start_year, start_month
+    while (y, m) <= (end_year, end_month):
+        months.append(f"{y}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return months
+
+
+# How far back to train (monthly archives start from 2023-01 on untroubled.org)
+TRAIN_START_YEAR = 2024
+TRAIN_START_MONTH = 1
+# Max messages to learn per month
+MAX_PER_MONTH = 500
+# Max months to train per run (to avoid long-running tasks)
+MAX_MONTHS_PER_RUN = 3
+
+
+async def train_spam_monthly() -> int:
+    """Download and train from untroubled.org spam archives.
+    Trains all missing months from TRAIN_START back to present,
+    processing up to MAX_MONTHS_PER_RUN per invocation."""
+    trained = _get_trained_months()
+    all_months = _generate_months(TRAIN_START_YEAR, TRAIN_START_MONTH)
+    missing = [m for m in all_months if m not in trained]
+
+    if not missing:
+        logger.info("Bayes spam: all %d months trained (%s to %s)",
+                     len(all_months), all_months[0], all_months[-1])
         return 0
-    finally:
-        # Cleanup extracted files
-        subprocess.run(["rm", "-rf", dest], capture_output=True)
+
+    logger.info("Bayes spam: %d months to train, processing up to %d this run",
+                len(missing), MAX_MONTHS_PER_RUN)
+
+    total_learned = 0
+    for month_str in missing[:MAX_MONTHS_PER_RUN]:
+        url = f"{SPAM_BASE_URL}/{month_str}.7z"
+        dest = f"{DATA_DIR}/spam-{month_str}"
+
+        try:
+            count = await _download_and_extract(url, dest)
+            if count == 0:
+                logger.warning("No spam files for %s, skipping", month_str)
+                # Mark as trained anyway to avoid retrying missing months
+                _mark_month_trained(month_str)
+                continue
+
+            learned = await _learn_directory(dest, "spam", max_messages=MAX_PER_MONTH)
+            logger.info("Bayes trained %d spam messages from %s", learned, month_str)
+
+            _mark_month_trained(month_str)
+            total_learned += learned
+
+            # Also update legacy state file for status display
+            _set_last_trained(month_str)
+
+        except Exception:
+            logger.exception("Spam training failed for %s", month_str)
+        finally:
+            subprocess.run(["rm", "-rf", dest], capture_output=True)
+
+    return total_learned
 
 
 async def train_ham_corpus():

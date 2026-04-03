@@ -1809,7 +1809,7 @@ async def import_keyword_rules(req: KeywordImport):
 
 # --- Bayes Training ---
 
-from .bayes_trainer import train_spam_monthly, train_ham_corpus, _get_last_trained
+from .bayes_trainer import train_spam_monthly, train_ham_corpus, _get_last_trained, _get_trained_months, _generate_months, TRAIN_START_YEAR, TRAIN_START_MONTH
 
 @app.get("/api/bayes-training/status")
 async def bayes_training_status():
@@ -1830,11 +1830,19 @@ async def bayes_training_status():
     except Exception:
         stat = {}
 
+    trained_months = _get_trained_months()
+    all_months = _generate_months(TRAIN_START_YEAR, TRAIN_START_MONTH)
+    missing_months = [m for m in all_months if m not in trained_months]
+
     return {
         "last_spam_trained": last_trained or None,
         "ham_corpus_trained": ham_trained,
         "spam_source": "https://untroubled.org/spam/",
         "ham_source": "SpamAssassin easy_ham corpus",
+        "months_total": len(all_months),
+        "months_trained": len(trained_months),
+        "months_remaining": len(missing_months),
+        "trained_months": sorted(trained_months),
         "rspamd_learned": stat.get("learned", 0),
         "rspamd_ham_count": stat.get("ham_count", 0),
         "rspamd_spam_count": stat.get("spam_count", 0),
@@ -1843,13 +1851,7 @@ async def bayes_training_status():
 
 @app.post("/api/bayes-training/train-now")
 async def bayes_train_now():
-    """Manually trigger Bayes training. Resets state to force re-download."""
-    import os
-    # Reset state to force re-training
-    state_file = "/var/lib/spamproxy/bayes-training/last_trained.txt"
-    if os.path.exists(state_file):
-        os.remove(state_file)
-        logger.info("Reset training state, will re-download")
+    """Manually trigger Bayes training. Trains next batch of missing months."""
 
     ham_count = await train_ham_corpus()
     spam_count = await train_spam_monthly()
