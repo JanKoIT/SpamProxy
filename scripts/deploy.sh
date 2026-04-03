@@ -37,13 +37,19 @@ fi
 first_install() {
     log "=== SpamProxy Erstinstallation ==="
 
-    # Check prerequisites
+    # Install prerequisites
     if ! command -v docker &>/dev/null; then
-        err "Docker nicht installiert. Installiere: curl -fsSL https://get.docker.com | sh"
-        exit 1
+        log "Installiere Docker..."
+        curl -fsSL https://get.docker.com | sh
+        systemctl enable docker
+        systemctl start docker
     fi
+
     if ! command -v nginx &>/dev/null; then
-        warn "Nginx nicht installiert. Installiere: apt install nginx certbot python3-certbot-nginx"
+        log "Installiere Nginx + Certbot..."
+        apt-get update -qq
+        apt-get install -y -qq nginx certbot python3-certbot-nginx
+        systemctl enable nginx
     fi
 
     # Create .env if not exists
@@ -88,35 +94,57 @@ first_install() {
     log "Warte auf PostgreSQL..."
     sleep 10
 
+    # Setup Nginx
+    if command -v nginx &>/dev/null; then
+        if [ ! -f /etc/nginx/sites-available/spamproxy ]; then
+            log "Konfiguriere Nginx..."
+            cp docker/nginx/spamproxy.conf /etc/nginx/sites-available/spamproxy
+
+            # Replace placeholder domain with PROXY_HOSTNAME from .env
+            source .env 2>/dev/null || true
+            if [ -n "${PROXY_HOSTNAME:-}" ]; then
+                sed -i "s/spamproxy.example.com/$PROXY_HOSTNAME/g" /etc/nginx/sites-available/spamproxy
+                log "Nginx-Domain gesetzt: $PROXY_HOSTNAME"
+            fi
+
+            ln -sf /etc/nginx/sites-available/spamproxy /etc/nginx/sites-enabled/
+            rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+            nginx -t && systemctl reload nginx
+            log "Nginx konfiguriert"
+
+            # TLS mit Certbot (nur wenn Domain gesetzt)
+            if [ -n "${PROXY_HOSTNAME:-}" ] && [ "$PROXY_HOSTNAME" != "proxy.example.com" ]; then
+                log "Hole TLS-Zertifikat fuer $PROXY_HOSTNAME..."
+                certbot --nginx -d "$PROXY_HOSTNAME" --non-interactive --agree-tos \
+                    --email "${ADMIN_EMAIL:-admin@$PROXY_HOSTNAME}" || \
+                    warn "Certbot fehlgeschlagen - TLS muss manuell eingerichtet werden"
+            fi
+        else
+            log "Nginx bereits konfiguriert"
+        fi
+    fi
+
     # Setup firewall
     if command -v ufw &>/dev/null; then
         log "Konfiguriere Firewall..."
-        ufw allow 25/tcp comment "SMTP"
-        ufw allow 587/tcp comment "SMTP Submission"
-        ufw allow 80/tcp comment "HTTP"
-        ufw allow 443/tcp comment "HTTPS"
-        # Blockiere direkten Zugriff auf interne Ports
-        ufw deny 3080/tcp comment "SpamProxy Web (nur via Nginx)"
-        ufw deny 8025/tcp comment "SpamProxy API (intern)"
-        ufw deny 11334/tcp comment "rspamd Web (intern)"
+        ufw allow 22/tcp comment "SSH" 2>/dev/null || true
+        ufw allow 25/tcp comment "SMTP" 2>/dev/null || true
+        ufw allow 587/tcp comment "SMTP Submission" 2>/dev/null || true
+        ufw allow 80/tcp comment "HTTP" 2>/dev/null || true
+        ufw allow 443/tcp comment "HTTPS" 2>/dev/null || true
+        ufw --force enable 2>/dev/null || true
         log "Firewall konfiguriert"
     fi
 
     log ""
     log "=== Installation abgeschlossen ==="
     log ""
+    source .env 2>/dev/null || true
     log "Naechste Schritte:"
-    log "1. .env anpassen (PROXY_HOSTNAME, ADMIN_EMAIL, AI_API_KEY)"
-    log "2. Nginx einrichten:"
-    log "   sudo cp docker/nginx/spamproxy.conf /etc/nginx/sites-available/spamproxy"
-    log "   sudo ln -s /etc/nginx/sites-available/spamproxy /etc/nginx/sites-enabled/"
-    log "   # Domain in der Config anpassen, dann:"
-    log "   sudo certbot --nginx -d dein-hostname.de"
-    log "   sudo systemctl reload nginx"
-    log "3. DNS MX-Record auf $PROXY_HOSTNAME setzen"
-    log "4. Backups einrichten:"
-    log "   sudo ./scripts/setup-cron.sh"
-    log "5. Web-Interface: https://dein-hostname.de"
+    log "1. .env anpassen: nano .env (PROXY_HOSTNAME, ADMIN_EMAIL, AI_API_KEY)"
+    log "2. DNS MX-Record auf ${PROXY_HOSTNAME:-proxy.example.com} setzen"
+    log "3. Backups einrichten: sudo ./scripts/setup-cron.sh"
+    log "4. Web-Interface: https://${PROXY_HOSTNAME:-localhost}"
     log ""
     source .env 2>/dev/null
     log "Admin-Login: ${ADMIN_EMAIL:-admin@example.com}"
