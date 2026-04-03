@@ -1219,8 +1219,12 @@ async def create_sender_domain(req: SenderDomainRequest):
         }
 
 
+class VerifyRequest(BaseModel):
+    method: str = ""  # "dns" or "manual", empty = use domain's method
+
+
 @app.post("/api/sender-domains/{domain_id}/verify")
-async def verify_sender_domain(domain_id: UUID):
+async def verify_sender_domain(domain_id: UUID, req: VerifyRequest = VerifyRequest()):
     """Verify domain ownership via DNS token or manual approval."""
     async with async_session() as session:
         result = await session.execute(
@@ -1230,20 +1234,24 @@ async def verify_sender_domain(domain_id: UUID):
         if not sd:
             raise HTTPException(status_code=404, detail="Not found")
 
-        if sd.verification_method == "dns":
+        method = req.method or sd.verification_method
+
+        if method == "dns":
             if not _check_verification_token(sd.domain, sd.verification_token):
                 raise HTTPException(
                     status_code=400,
                     detail=f"DNS-Verifikationstoken nicht gefunden. Erstelle einen TXT-Record fuer {sd.domain} oder _spamproxy.{sd.domain} mit: {sd.verification_token}",
                 )
-            sd.is_verified = True
-            sd.verified_at = datetime.now(timezone.utc)
-        elif sd.verification_method == "manual":
-            sd.is_verified = True
-            sd.verified_at = datetime.now(timezone.utc)
+
+        # Verify and activate
+        sd.is_verified = True
+        sd.verified_at = datetime.now(timezone.utc)
+        sd.is_active = True
+        if method != sd.verification_method:
+            sd.verification_method = method
 
         await session.commit()
-        return {"status": "ok", "is_verified": sd.is_verified}
+        return {"status": "ok", "is_verified": True, "is_active": True}
 
 
 @app.post("/api/sender-domains/{domain_id}/check-dns")

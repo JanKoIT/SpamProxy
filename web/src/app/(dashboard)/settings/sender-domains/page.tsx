@@ -156,15 +156,19 @@ export default function SenderDomainsPage() {
     }
   }
 
-  async function handleVerify(id: string) {
+  async function handleVerify(id: string, method: string = "") {
     setVerifyLoading((p) => ({ ...p, [id]: true }));
     try {
       const res = await fetch(`/api/sender-domains/${id}/verify`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method }),
       });
-      if (res.ok) {
-        await fetchDomains();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.detail || "Verifizierung fehlgeschlagen");
       }
+      await fetchDomains();
     } finally {
       setVerifyLoading((p) => ({ ...p, [id]: false }));
     }
@@ -410,7 +414,8 @@ export default function SenderDomainsPage() {
             deleteConfirm={deleteConfirm === domain.id}
             copied={copied}
             onCheckDns={() => handleCheckDns(domain.id)}
-            onVerify={() => handleVerify(domain.id)}
+            onVerify={() => handleVerify(domain.id, "dns")}
+            onManualVerify={() => handleVerify(domain.id, "manual")}
             onToggle={() => handleToggle(domain.id)}
             onDelete={() => handleDelete(domain.id)}
             onDeleteConfirm={() => setDeleteConfirm(domain.id)}
@@ -433,6 +438,7 @@ interface DomainCardProps {
   copied: string | null;
   onCheckDns: () => void;
   onVerify: () => void;
+  onManualVerify: () => void;
   onToggle: () => void;
   onDelete: () => void;
   onDeleteConfirm: () => void;
@@ -448,6 +454,7 @@ function DomainCard({
   copied,
   onCheckDns,
   onVerify,
+  onManualVerify,
   onToggle,
   onDelete,
   onDeleteConfirm,
@@ -617,18 +624,32 @@ function DomainCard({
             </code>{" "}
             mit dem obigen Token als Wert.
           </p>
-          <button
-            onClick={onVerify}
-            disabled={verifyLoading}
-            className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 transition-colors disabled:opacity-50"
-          >
-            {verifyLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle className="h-4 w-4" />
-            )}
-            Jetzt verifizieren
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onVerify}
+              disabled={verifyLoading}
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 transition-colors disabled:opacity-50"
+            >
+              {verifyLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
+              DNS verifizieren
+            </button>
+            <button
+              onClick={onManualVerify}
+              disabled={verifyLoading}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
+            >
+              {verifyLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" />
+              )}
+              Manuell freischalten
+            </button>
+          </div>
         </div>
       )}
 

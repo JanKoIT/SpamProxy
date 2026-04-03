@@ -3,13 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 const API_BASE = process.env.MAIL_SERVICE_URL ?? "http://mail-service:8025";
 
 export async function POST(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const body = await request.json().catch(() => ({}));
   const res = await fetch(`${API_BASE}/api/sender-domains/${id}/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   return NextResponse.json(await res.json(), { status: res.status });
 }
