@@ -61,27 +61,33 @@ first_install() {
         warn "WICHTIG: Oeffne .env und setze PROXY_HOSTNAME und ADMIN_EMAIL"
     fi
 
-    # Stop and remove ALL existing spamproxy containers (any compose config)
+    # Full cleanup: stop everything, remove containers, networks, kill docker-proxy
     log "Raeume alte Container auf..."
     docker compose down --remove-orphans 2>/dev/null || true
     $COMPOSE down --remove-orphans 2>/dev/null || true
-    # Kill any remaining containers with spamproxy in the name
     docker ps -a --filter "name=spamproxy" -q | xargs -r docker rm -f 2>/dev/null || true
-    # Remove old network
     docker network rm spamproxy_default 2>/dev/null || true
 
-    # Check and free required ports
+    # Kill zombie docker-proxy processes holding ports
+    pkill -f "docker-proxy.*3080" 2>/dev/null || true
+    pkill -f "docker-proxy.*11334" 2>/dev/null || true
+    pkill -f "docker-proxy.*11333" 2>/dev/null || true
+    pkill -f "docker-proxy.*8025" 2>/dev/null || true
+
+    # Free required ports (any process)
     for PORT in 25 587 3080; do
         PID=$(ss -tlnp "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
         if [ -n "$PID" ]; then
             PNAME=$(ps -p "$PID" -o comm= 2>/dev/null || echo "unknown")
             warn "Port $PORT belegt von PID $PID ($PNAME) - stoppe..."
-            kill "$PID" 2>/dev/null || true
-            sleep 1
-            # Force kill if still running
             kill -9 "$PID" 2>/dev/null || true
         fi
     done
+
+    # Restart Docker daemon to clear any stuck proxy state
+    log "Starte Docker neu um Proxy-Prozesse zu bereinigen..."
+    systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+    sleep 3
 
     # Build and start
     log "Baue Container..."
