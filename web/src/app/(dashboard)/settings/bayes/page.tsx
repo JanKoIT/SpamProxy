@@ -10,7 +10,38 @@ import {
   Database,
   Download,
   ExternalLink,
+  Copy,
+  Check,
 } from "lucide-react";
+
+function CopyableCommand({ label, command }: { label: string; command: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <div className="flex items-start gap-2 rounded bg-slate-950 border border-slate-700 p-2">
+        <code className="flex-1 text-xs font-mono text-green-400 break-all whitespace-pre-wrap">
+          {command}
+        </code>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(command);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          className="shrink-0 rounded p-1 text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
+          title="Copy"
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-green-400" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface TrainingStatus {
   last_spam_trained: string | null;
@@ -274,21 +305,17 @@ export default function BayesTrainingPage() {
                 </h4>
                 <p className="text-xs text-slate-400 mb-3">
                   Scans Junk folders periodically and sends messages to SpamProxy for learning.
+                  Run these commands on your Dovecot server:
                 </p>
-                <button
-                  onClick={() => window.open("/api/dovecot/learn-script", "_blank")}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
-                >
-                  <Download className="h-4 w-4" />
-                  Download dovecot-learn.sh
-                </button>
-                <div className="mt-3 rounded bg-slate-950 p-3 text-xs font-mono text-slate-400 overflow-x-auto">
-                  <p className="text-slate-500"># Install on Dovecot server:</p>
-                  <p>chmod +x dovecot-learn.sh</p>
-                  <p>sudo mv dovecot-learn.sh /usr/local/bin/</p>
-                  <p className="mt-2 text-slate-500"># Add to cron (every 2 hours):</p>
-                  <p>crontab -e</p>
-                  <p className="text-green-400">0 */2 * * * /usr/local/bin/dovecot-learn.sh</p>
+                <div className="space-y-2">
+                  <CopyableCommand
+                    label="Download & install:"
+                    command={`wget -O /usr/local/bin/dovecot-learn.sh "${typeof window !== 'undefined' ? window.location.origin : ''}/api/dovecot/learn-script" && chmod +x /usr/local/bin/dovecot-learn.sh`}
+                  />
+                  <CopyableCommand
+                    label="Add to cron (every 2 hours):"
+                    command={`(crontab -l 2>/dev/null; echo "0 */2 * * * /usr/local/bin/dovecot-learn.sh >> /var/log/spamproxy-learn.log 2>&1") | crontab -`}
+                  />
                 </div>
               </div>
 
@@ -298,22 +325,33 @@ export default function BayesTrainingPage() {
                   Method 2: IMAPSieve (Real-time)
                 </h4>
                 <p className="text-xs text-slate-400 mb-3">
-                  Trains instantly when a user moves mail to/from the Junk folder in their email client.
+                  Trains instantly when a user moves mail to/from Junk in their email client.
+                  Run these commands on your Dovecot server:
                 </p>
-                <button
-                  onClick={() => window.open("/api/dovecot/sieve-kit", "_blank")}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-500 transition-colors"
-                >
-                  <Download className="h-4 w-4" />
-                  Download Sieve Kit (.tar.gz)
-                </button>
-                <div className="mt-3 rounded bg-slate-950 p-3 text-xs font-mono text-slate-400 overflow-x-auto">
-                  <p className="text-slate-500"># Install on Dovecot server:</p>
-                  <p>tar xzf dovecot-sieve-kit.tar.gz</p>
-                  <p>sudo cp dovecot-sieve/* /etc/dovecot/sieve/</p>
-                  <p>sudo sievec /etc/dovecot/sieve/*.sieve</p>
-                  <p className="text-slate-500"># Then configure Dovecot (see README.txt)</p>
-                  <p>sudo systemctl restart dovecot</p>
+                <div className="space-y-2">
+                  <CopyableCommand
+                    label="Download & install:"
+                    command={`wget -O /tmp/sieve-kit.tar.gz "${typeof window !== 'undefined' ? window.location.origin : ''}/api/dovecot/sieve-kit" && tar xzf /tmp/sieve-kit.tar.gz -C /tmp && sudo cp /tmp/dovecot-sieve/*.sh /etc/dovecot/sieve/ && sudo cp /tmp/dovecot-sieve/*.sieve /etc/dovecot/sieve/ && sudo chmod +x /etc/dovecot/sieve/*.sh && sudo sievec /etc/dovecot/sieve/learn-spam.sieve && sudo sievec /etc/dovecot/sieve/learn-ham.sieve`}
+                  />
+                  <CopyableCommand
+                    label="Dovecot config (add to 90-sieve.conf):"
+                    command={`plugin {
+  sieve_plugins = sieve_imapsieve sieve_extprograms
+  imapsieve_mailbox1_name = Junk
+  imapsieve_mailbox1_causes = COPY APPEND
+  imapsieve_mailbox1_before = file:/etc/dovecot/sieve/learn-spam.sieve
+  imapsieve_mailbox2_name = *
+  imapsieve_mailbox2_from = Junk
+  imapsieve_mailbox2_causes = COPY
+  imapsieve_mailbox2_before = file:/etc/dovecot/sieve/learn-ham.sieve
+  sieve_pipe_bin_dir = /etc/dovecot/sieve
+  sieve_global_extensions = +vnd.dovecot.pipe +vnd.dovecot.environment
+}`}
+                  />
+                  <CopyableCommand
+                    label="Restart Dovecot:"
+                    command="sudo systemctl restart dovecot"
+                  />
                 </div>
               </div>
             </div>
