@@ -101,7 +101,7 @@ services:
       - dkim_keys:/var/lib/rspamd/dkim
       - /etc/localtime:/etc/localtime:ro
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://spamproxy:changeme@postgres:5432/spamproxy}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-spamproxy}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-spamproxy}
       RSPAMD_URL: ${RSPAMD_URL:-http://rspamd:11333}
       RSPAMD_PASSWORD: ${RSPAMD_PASSWORD:-}
       AI_PROVIDER: ${AI_PROVIDER:-openai}
@@ -124,7 +124,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://spamproxy:changeme@postgres:5432/spamproxy}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-spamproxy}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-spamproxy}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-generate-a-secret-here}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       MAIL_SERVICE_URL: http://mail-service:8025
