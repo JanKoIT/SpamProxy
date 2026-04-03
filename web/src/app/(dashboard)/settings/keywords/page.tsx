@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Type, Plus, Pencil, Trash2, X, Info, Loader2 } from "lucide-react";
+import { useRef } from "react";
+import { Type, Plus, Pencil, Trash2, X, Info, Loader2, Download, Upload } from "lucide-react";
 
 interface KeywordRule {
   id: string;
@@ -52,6 +53,43 @@ export default function KeywordsPage() {
   const [matchField, setMatchField] = useState<"subject" | "body" | "from" | "any">("any");
   const [scoreAdjustment, setScoreAdjustment] = useState(1);
   const [description, setDescription] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importLoading, setImportLoading] = useState(false);
+
+  async function handleExport() {
+    const res = await fetch("/api/keyword-rules/export");
+    const data = await res.json();
+    data.count = data.rules?.length ?? 0;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `spamproxy-keywords-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImport(file: File, mode: string) {
+    setImportLoading(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch("/api/keyword-rules/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rules: data.rules, mode }),
+      });
+      const result = await res.json();
+      alert(`Import: ${result.imported} importiert, ${result.skipped} uebersprungen`);
+      fetchRules();
+    } catch (e) {
+      alert("Import fehlgeschlagen: " + (e instanceof Error ? e.message : "Unbekannter Fehler"));
+    } finally {
+      setImportLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   async function fetchRules() {
     try {
@@ -143,13 +181,43 @@ export default function KeywordsPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Keyword hinzufuegen
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            Export
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const mode = confirm("Bestehende Regeln behalten und neue hinzufuegen?\n\nOK = Zusammenfuehren\nAbbrechen = Alle ersetzen") ? "merge" : "replace";
+                handleImport(file, mode);
+              }
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importLoading}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50"
+          >
+            {importLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            Import
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Keyword hinzufuegen
+          </button>
+        </div>
       </div>
 
       {/* Info box */}

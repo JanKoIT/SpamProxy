@@ -1738,3 +1738,70 @@ async def delete_keyword_rule(rule_id: UUID):
         await session.delete(rule)
         await session.commit()
         return {"status": "ok"}
+
+
+@app.get("/api/keyword-rules/export")
+async def export_keyword_rules():
+    """Export all keyword rules as JSON."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(KeywordRule).order_by(KeywordRule.match_field, KeywordRule.keyword)
+        )
+        return {
+            "version": 1,
+            "count": 0,  # placeholder, set below
+            "rules": [
+                {
+                    "keyword": r.keyword,
+                    "match_type": r.match_type,
+                    "match_field": r.match_field,
+                    "score_adjustment": r.score_adjustment,
+                    "description": r.description,
+                    "is_active": r.is_active,
+                }
+                for r in result.scalars()
+            ],
+        }
+
+
+class KeywordImport(BaseModel):
+    rules: list[KeywordRuleRequest]
+    mode: str = "merge"  # merge or replace
+
+
+@app.post("/api/keyword-rules/import")
+async def import_keyword_rules(req: KeywordImport):
+    """Import keyword rules. Mode: merge (skip existing) or replace (delete all first)."""
+    async with async_session() as session:
+        imported = 0
+        skipped = 0
+
+        if req.mode == "replace":
+            for r in (await session.execute(select(KeywordRule))).scalars():
+                await session.delete(r)
+            await session.flush()
+
+        for rd in req.rules:
+            existing = await session.execute(
+                select(KeywordRule).where(
+                    KeywordRule.keyword == rd.keyword,
+                    KeywordRule.match_type == rd.match_type,
+                    KeywordRule.match_field == rd.match_field,
+                )
+            )
+            if existing.scalar_one_or_none() and req.mode == "merge":
+                skipped += 1
+                continue
+
+            session.add(KeywordRule(
+                keyword=rd.keyword,
+                match_type=rd.match_type,
+                match_field=rd.match_field,
+                score_adjustment=rd.score_adjustment,
+                description=rd.description,
+                is_active=rd.is_active if rd.is_active is not None else True,
+            ))
+            imported += 1
+
+        await session.commit()
+        return {"status": "ok", "imported": imported, "skipped": skipped}
