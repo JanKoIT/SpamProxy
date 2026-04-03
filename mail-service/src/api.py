@@ -1843,7 +1843,14 @@ async def bayes_training_status():
 
 @app.post("/api/bayes-training/train-now")
 async def bayes_train_now():
-    """Manually trigger Bayes training."""
+    """Manually trigger Bayes training. Resets state to force re-download."""
+    import os
+    # Reset state to force re-training
+    state_file = "/var/lib/spamproxy/bayes-training/last_trained.txt"
+    if os.path.exists(state_file):
+        os.remove(state_file)
+        logger.info("Reset training state, will re-download")
+
     ham_count = await train_ham_corpus()
     spam_count = await train_spam_monthly()
     return {

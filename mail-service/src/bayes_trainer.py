@@ -46,32 +46,46 @@ def _set_last_trained(month: str):
 async def _download_and_extract(url: str, dest_dir: str) -> int:
     """Download a .7z archive and extract to dest_dir. Returns number of files."""
     logger.info("Downloading %s ...", url)
-    async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-        resp = await client.get(url)
-        if resp.status_code != 200:
-            logger.warning("Download failed: %s -> %d", url, resp.status_code)
-            return 0
+    try:
+        async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            logger.info("Download response: %d, size: %d bytes", resp.status_code, len(resp.content))
+            if resp.status_code != 200:
+                logger.warning("Download failed: %s -> %d", url, resp.status_code)
+                return 0
+            if len(resp.content) < 1000:
+                logger.warning("Download too small (%d bytes), likely error page", len(resp.content))
+                return 0
+    except Exception as e:
+        logger.exception("Download error for %s: %s", url, e)
+        return 0
 
     os.makedirs(dest_dir, exist_ok=True)
     archive_path = f"{dest_dir}/archive.7z"
 
     with open(archive_path, "wb") as f:
         f.write(resp.content)
+    logger.info("Saved archive: %s (%d bytes)", archive_path, len(resp.content))
 
     # Extract with 7z (p7zip)
     try:
         result = subprocess.run(
             ["7z", "x", "-y", f"-o{dest_dir}", archive_path],
-            capture_output=True, timeout=300,
+            capture_output=True, timeout=600,
         )
         if result.returncode != 0:
-            logger.warning("7z extract failed: %s", result.stderr[:200])
+            logger.warning("7z extract failed (rc=%d): %s", result.returncode, result.stderr.decode()[:500])
             return 0
+        logger.info("7z extract stdout: %s", result.stdout.decode()[-200:])
     except FileNotFoundError:
-        logger.warning("p7zip not installed, trying alternative extraction")
+        logger.error("p7zip (7z) not installed! Install with: apt install p7zip-full")
+        return 0
+    except subprocess.TimeoutExpired:
+        logger.error("7z extract timed out")
         return 0
     finally:
-        os.remove(archive_path)
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
 
     # Count extracted files
     count = sum(1 for f in Path(dest_dir).rglob("*") if f.is_file())
@@ -148,7 +162,9 @@ async def train_spam_monthly():
         learned = await _learn_directory(dest, "spam", max_messages=1000)
         logger.info("Bayes trained %d spam messages from %s", learned, month_str)
 
-        _set_last_trained(month_str)
+        # Only mark as trained if we actually learned something
+        if learned > 0:
+            _set_last_trained(month_str)
         return learned
     except Exception:
         logger.exception("Spam training failed for %s", month_str)
