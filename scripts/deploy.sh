@@ -19,6 +19,20 @@ err()  { echo -e "${RED}[SpamProxy]${NC} $1"; }
 
 cd "$PROJECT_DIR"
 
+# Auto-update from git before any command
+if [ -d .git ]; then
+    log "Pruefe auf Updates..."
+    git fetch --quiet 2>/dev/null || true
+    LOCAL=$(git rev-parse HEAD 2>/dev/null)
+    REMOTE=$(git rev-parse @{u} 2>/dev/null || echo "$LOCAL")
+    if [ "$LOCAL" != "$REMOTE" ]; then
+        log "Neue Version verfuegbar, aktualisiere..."
+        git pull --ff-only || { warn "Git pull fehlgeschlagen, fahre mit lokaler Version fort"; }
+    else
+        log "Bereits auf neuestem Stand"
+    fi
+fi
+
 # ─── First Install ───────────────────────────────────────────────
 first_install() {
     log "=== SpamProxy Erstinstallation ==="
@@ -103,11 +117,7 @@ update() {
     $COMPOSE exec -T postgres pg_dump -U spamproxy spamproxy > "$BACKUP_FILE" 2>/dev/null
     log "Backup: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
 
-    # Pull latest code (if git)
-    if [ -d .git ]; then
-        log "Hole neuesten Code..."
-        git pull --ff-only || { warn "Git pull fehlgeschlagen - ueberspringe"; }
-    fi
+    # (git pull already done at script start)
 
     # Rebuild only changed images
     log "Baue aktualisierte Container..."
