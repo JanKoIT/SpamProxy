@@ -35,9 +35,41 @@ fi
 
 # ─── First Install ───────────────────────────────────────────────
 first_install() {
-    log "=== SpamProxy Erstinstallation ==="
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║       SpamProxy - Erstinstallation       ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+    echo ""
 
-    # Install prerequisites
+    # ── Interactive Setup ─────────────────────────────────────
+    read -p "Hostname fuer den Proxy (z.B. mail.example.com): " INPUT_HOSTNAME
+    INPUT_HOSTNAME="${INPUT_HOSTNAME:-proxy.example.com}"
+
+    read -p "Admin E-Mail-Adresse: " INPUT_EMAIL
+    INPUT_EMAIL="${INPUT_EMAIL:-admin@$INPUT_HOSTNAME}"
+
+    ADMIN_PASS=$(openssl rand -hex 8)
+    read -p "Admin-Passwort [$ADMIN_PASS]: " INPUT_PASS
+    ADMIN_PASS="${INPUT_PASS:-$ADMIN_PASS}"
+
+    read -p "OpenAI API-Key (leer = AI deaktiviert): " INPUT_AI_KEY
+
+    echo ""
+    log "Konfiguration:"
+    log "  Hostname:  $INPUT_HOSTNAME"
+    log "  Admin:     $INPUT_EMAIL"
+    log "  Passwort:  $ADMIN_PASS"
+    log "  AI:        ${INPUT_AI_KEY:+aktiviert}${INPUT_AI_KEY:-deaktiviert}"
+    echo ""
+    read -p "Installation starten? (Y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        log "Abgebrochen."
+        exit 0
+    fi
+
+    # ── Install Dependencies ──────────────────────────────────
+    log "Pruefe Abhaengigkeiten..."
     if ! command -v docker &>/dev/null; then
         log "Installiere Docker..."
         curl -fsSL https://get.docker.com | sh
@@ -52,79 +84,79 @@ first_install() {
         systemctl enable nginx
     fi
 
-    # Create .env if not exists
-    if [ ! -f .env ]; then
-        cp .env.example .env
-        # Generate secure passwords
-        PGPASS=$(openssl rand -hex 16)
-        NEXTAUTH_SECRET=$(openssl rand -hex 32)
-        RSPAMD_PASS=$(openssl rand -hex 12)
-        sed -i "s/POSTGRES_PASSWORD=changeme/POSTGRES_PASSWORD=$PGPASS/" .env
-        sed -i "s/NEXTAUTH_SECRET=generate-a-secret-here/NEXTAUTH_SECRET=$NEXTAUTH_SECRET/" .env
-        sed -i "s/RSPAMD_PASSWORD=changeme/RSPAMD_PASSWORD=$RSPAMD_PASS/" .env
-        sed -i "s/ADMIN_PASSWORD=changeme/ADMIN_PASSWORD=$(openssl rand -hex 8)/" .env
-        log "Sichere Passwoerter generiert in .env"
-        warn "WICHTIG: Oeffne .env und setze PROXY_HOSTNAME und ADMIN_EMAIL"
+    # ── Generate .env ─────────────────────────────────────────
+    log "Erstelle Konfiguration..."
+    cp .env.example .env
+    PGPASS=$(openssl rand -hex 16)
+    NEXTAUTH_SECRET=$(openssl rand -hex 32)
+    RSPAMD_PASS=$(openssl rand -hex 12)
+
+    sed -i "s/POSTGRES_PASSWORD=changeme/POSTGRES_PASSWORD=$PGPASS/" .env
+    sed -i "s/NEXTAUTH_SECRET=generate-a-secret-here/NEXTAUTH_SECRET=$NEXTAUTH_SECRET/" .env
+    sed -i "s/RSPAMD_PASSWORD=changeme/RSPAMD_PASSWORD=$RSPAMD_PASS/" .env
+    sed -i "s/ADMIN_PASSWORD=changeme/ADMIN_PASSWORD=$ADMIN_PASS/" .env
+    sed -i "s/ADMIN_EMAIL=admin@example.com/ADMIN_EMAIL=$INPUT_EMAIL/" .env
+    sed -i "s/PROXY_HOSTNAME=proxy.example.com/PROXY_HOSTNAME=$INPUT_HOSTNAME/" .env
+    if [ -n "$INPUT_AI_KEY" ]; then
+        sed -i "s/AI_API_KEY=sk-your-key-here/AI_API_KEY=$INPUT_AI_KEY/" .env
+    else
+        sed -i "s/AI_ENABLED=true/AI_ENABLED=false/" .env 2>/dev/null || true
     fi
 
-    # Full cleanup
-    log "Stoppe alle SpamProxy-Container..."
+    # ── Cleanup ───────────────────────────────────────────────
+    log "Raeume alte Container auf..."
     docker compose down --remove-orphans 2>/dev/null || true
     $COMPOSE down --remove-orphans 2>/dev/null || true
     docker ps -a --filter "name=spamproxy" -q | xargs -r docker rm -f 2>/dev/null || true
     docker network rm spamproxy_default 2>/dev/null || true
 
-    # Restart Docker to clear zombie docker-proxy port bindings
     log "Starte Docker-Daemon neu..."
     systemctl restart docker
-    # Wait until Docker is responsive
     for i in $(seq 1 30); do
         docker info >/dev/null 2>&1 && break
         sleep 1
     done
     log "Docker bereit"
 
-    # Build and start
-    log "Baue Container..."
+    # ── Build & Start ─────────────────────────────────────────
+    log "Baue Container (kann beim ersten Mal einige Minuten dauern)..."
     $COMPOSE build
 
     log "Starte Services..."
     $COMPOSE up -d
 
-    log "Warte auf PostgreSQL..."
-    sleep 10
+    log "Warte auf Datenbank..."
+    for i in $(seq 1 30); do
+        $COMPOSE exec -T postgres pg_isready -U spamproxy >/dev/null 2>&1 && break
+        sleep 1
+    done
 
-    # Setup Nginx
-    if command -v nginx &>/dev/null; then
-        if [ ! -f /etc/nginx/sites-available/spamproxy ]; then
-            log "Konfiguriere Nginx..."
-            cp docker/nginx/spamproxy.conf /etc/nginx/sites-available/spamproxy
+    # ── Nginx + TLS ───────────────────────────────────────────
+    log "Konfiguriere Nginx..."
+    rm -f /etc/nginx/sites-available/spamproxy /etc/nginx/sites-enabled/spamproxy 2>/dev/null || true
+    cp docker/nginx/spamproxy.conf /etc/nginx/sites-available/spamproxy
+    sed -i "s/spamproxy.example.com/$INPUT_HOSTNAME/g" /etc/nginx/sites-available/spamproxy
+    ln -sf /etc/nginx/sites-available/spamproxy /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-            # Replace placeholder domain with PROXY_HOSTNAME from .env
-            source .env 2>/dev/null || true
-            if [ -n "${PROXY_HOSTNAME:-}" ]; then
-                sed -i "s/spamproxy.example.com/$PROXY_HOSTNAME/g" /etc/nginx/sites-available/spamproxy
-                log "Nginx-Domain gesetzt: $PROXY_HOSTNAME"
-            fi
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx
+        log "Nginx konfiguriert fuer $INPUT_HOSTNAME"
 
-            ln -sf /etc/nginx/sites-available/spamproxy /etc/nginx/sites-enabled/
-            rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-            nginx -t && systemctl reload nginx
-            log "Nginx konfiguriert"
-
-            # TLS mit Certbot (nur wenn Domain gesetzt)
-            if [ -n "${PROXY_HOSTNAME:-}" ] && [ "$PROXY_HOSTNAME" != "proxy.example.com" ]; then
-                log "Hole TLS-Zertifikat fuer $PROXY_HOSTNAME..."
-                certbot --nginx -d "$PROXY_HOSTNAME" --non-interactive --agree-tos \
-                    --email "${ADMIN_EMAIL:-admin@$PROXY_HOSTNAME}" || \
-                    warn "Certbot fehlgeschlagen - TLS muss manuell eingerichtet werden"
-            fi
+        # TLS
+        log "Hole TLS-Zertifikat..."
+        if certbot --nginx -d "$INPUT_HOSTNAME" --non-interactive --agree-tos \
+            --email "$INPUT_EMAIL" 2>/dev/null; then
+            log "TLS-Zertifikat installiert"
         else
-            log "Nginx bereits konfiguriert"
+            warn "Certbot fehlgeschlagen - stelle sicher dass DNS auf diesen Server zeigt"
+            warn "Manuell nachholen: sudo certbot --nginx -d $INPUT_HOSTNAME"
         fi
+    else
+        warn "Nginx-Config fehlerhaft - bitte manuell pruefen"
     fi
 
-    # Setup firewall
+    # ── Firewall ──────────────────────────────────────────────
     if command -v ufw &>/dev/null; then
         log "Konfiguriere Firewall..."
         ufw allow 22/tcp comment "SSH" 2>/dev/null || true
@@ -136,19 +168,25 @@ first_install() {
         log "Firewall konfiguriert"
     fi
 
-    log ""
-    log "=== Installation abgeschlossen ==="
-    log ""
-    source .env 2>/dev/null || true
-    log "Naechste Schritte:"
-    log "1. .env anpassen: nano .env (PROXY_HOSTNAME, ADMIN_EMAIL, AI_API_KEY)"
-    log "2. DNS MX-Record auf ${PROXY_HOSTNAME:-proxy.example.com} setzen"
-    log "3. Backups einrichten: sudo ./scripts/setup-cron.sh"
-    log "4. Web-Interface: https://${PROXY_HOSTNAME:-localhost}"
-    log ""
-    source .env 2>/dev/null
-    log "Admin-Login: ${ADMIN_EMAIL:-admin@example.com}"
-    log "Admin-Passwort: steht in .env (ADMIN_PASSWORD)"
+    # ── Done ──────────────────────────────────────────────────
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║       Installation abgeschlossen!        ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  Web-Interface:  ${GREEN}https://$INPUT_HOSTNAME${NC}"
+    echo -e "  Admin-Login:    ${GREEN}$INPUT_EMAIL${NC}"
+    echo -e "  Admin-Passwort: ${GREEN}$ADMIN_PASS${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Naechste Schritte:${NC}"
+    echo -e "  1. DNS: MX-Record fuer deine Domain auf ${GREEN}$INPUT_HOSTNAME${NC} setzen"
+    echo -e "  2. DNS: A-Record fuer ${GREEN}$INPUT_HOSTNAME${NC} auf $(curl -4s ifconfig.me 2>/dev/null || echo '<SERVER-IP>')"
+    echo -e "  3. Backups einrichten: ${GREEN}sudo ./scripts/setup-cron.sh${NC}"
+    echo ""
+    echo -e "  Konfiguration:  ${YELLOW}$PROJECT_DIR/.env${NC}"
+    echo -e "  Logs:           ${YELLOW}./scripts/deploy.sh logs${NC}"
+    echo -e "  Status:         ${YELLOW}./scripts/deploy.sh status${NC}"
+    echo ""
 }
 
 # ─── Update ──────────────────────────────────────────────────────
