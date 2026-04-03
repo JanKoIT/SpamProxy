@@ -114,8 +114,7 @@ services:
       SMTP_BACKEND_PORT: ${SMTP_BACKEND_PORT:-25}
       QUARANTINE_RETENTION_DAYS: ${QUARANTINE_RETENTION_DAYS:-30}
       TZ: ${TZ:-Europe/Berlin}
-    ports:
-      - "8025:8025"
+    # Port 8025 nur intern im Docker-Netzwerk, fuer dev: "8025:8025"
     depends_on:
       postgres:
         condition: service_healthy

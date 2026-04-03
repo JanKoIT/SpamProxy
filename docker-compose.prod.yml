@@ -32,9 +32,6 @@ services:
 
   mail-service:
     restart: always
-    # API nur intern + localhost (fuer Federation-Endpoints via Nginx)
-    ports:
-      - "127.0.0.1:8025:8025"
 
   web:
     restart: always
