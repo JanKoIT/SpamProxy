@@ -1087,6 +1087,7 @@ import dns.resolver
 
 def _check_spf(domain: str, proxy_hostname: str) -> tuple[str, str | None, bool]:
     """Check SPF record for domain. Returns (status, record, includes_proxy)."""
+    logger.info("SPF check for %s (proxy=%s)", domain, proxy_hostname)
     try:
         answers = dns.resolver.resolve(domain, "TXT")
         for rdata in answers:
@@ -1109,6 +1110,7 @@ def _check_spf(domain: str, proxy_hostname: str) -> tuple[str, str | None, bool]
 
 def _check_dkim(domain: str, selector: str) -> tuple[str, str | None]:
     """Check DKIM record. Returns (status, record)."""
+    logger.info("DKIM check for %s (selector=%s)", domain, selector)
     try:
         dkim_domain = f"{selector}._domainkey.{domain}"
         answers = dns.resolver.resolve(dkim_domain, "TXT")
@@ -1141,23 +1143,29 @@ def _check_mx(domain: str) -> tuple[str, list[str]]:
 
 def _check_verification_token(domain: str, token: str) -> bool:
     """Check if DNS TXT record contains the verification token."""
+    logger.info("DNS verify: checking %s for token %s", domain, token[:30])
     try:
         answers = dns.resolver.resolve(domain, "TXT")
         for rdata in answers:
             txt = rdata.to_text().strip('"')
+            logger.info("DNS TXT for %s: %s", domain, txt[:100])
             if token in txt:
                 return True
         # Also check _spamproxy subdomain
         try:
-            answers = dns.resolver.resolve(f"_spamproxy.{domain}", "TXT")
+            sub = f"_spamproxy.{domain}"
+            logger.info("DNS verify: checking subdomain %s", sub)
+            answers = dns.resolver.resolve(sub, "TXT")
             for rdata in answers:
                 txt = rdata.to_text().strip('"')
+                logger.info("DNS TXT for %s: %s", sub, txt[:100])
                 if token in txt:
                     return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.info("DNS subdomain check failed: %s", e)
         return False
-    except Exception:
+    except Exception as e:
+        logger.info("DNS check failed for %s: %s", domain, e)
         return False
 
 
@@ -1226,6 +1234,8 @@ class VerifyRequest(BaseModel):
 @app.post("/api/sender-domains/{domain_id}/verify")
 async def verify_sender_domain(domain_id: UUID, req: VerifyRequest = VerifyRequest()):
     """Verify domain ownership via DNS token or manual approval."""
+    logger.info("Verify domain %s, requested method=%s", domain_id, req.method)
+
     async with async_session() as session:
         result = await session.execute(
             select(SenderDomain).where(SenderDomain.id == domain_id)
@@ -1234,21 +1244,26 @@ async def verify_sender_domain(domain_id: UUID, req: VerifyRequest = VerifyReque
         if not sd:
             raise HTTPException(status_code=404, detail="Not found")
 
-        method = req.method or sd.verification_method
+        method = req.method if req.method else sd.verification_method
+        logger.info("Domain %s: using method=%s (domain default=%s)", sd.domain, method, sd.verification_method)
 
         if method == "dns":
-            if not _check_verification_token(sd.domain, sd.verification_token):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"DNS-Verifikationstoken nicht gefunden. Erstelle einen TXT-Record fuer {sd.domain} oder _spamproxy.{sd.domain} mit: {sd.verification_token}",
-                )
+            logger.info("DNS verify for %s, token=%s", sd.domain, sd.verification_token)
+            found = _check_verification_token(sd.domain, sd.verification_token)
+            logger.info("DNS token found: %s", found)
+            if not found:
+                return {
+                    "status": "error",
+                    "is_verified": False,
+                    "detail": f"DNS-Verifikationstoken nicht gefunden. Erstelle einen TXT-Record fuer {sd.domain} oder _spamproxy.{sd.domain} mit: {sd.verification_token}",
+                }
 
         # Verify and activate
         sd.is_verified = True
         sd.verified_at = datetime.now(timezone.utc)
         sd.is_active = True
-        if method != sd.verification_method:
-            sd.verification_method = method
+        sd.verification_method = method
+        logger.info("Domain %s verified and activated (method=%s)", sd.domain, method)
 
         await session.commit()
         return {"status": "ok", "is_verified": True, "is_active": True}
