@@ -9,6 +9,7 @@ from .lmtp_server import start_lmtp_server
 from .sasl_server import start_sasl_server
 from .tasks import start_background_tasks
 from .bayes_trainer import run_training_loop
+from .log_parser import run_log_parser
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +32,9 @@ async def main():
 
     # Start automatic Bayes training from spam/ham corpora
     trainer_task = asyncio.create_task(run_training_loop())
+
+    # Start Postfix log parser (tracks bounces, deferrals)
+    parser_task = asyncio.create_task(run_log_parser())
 
     # Start FastAPI (internal API + AI endpoint)
     config = uvicorn.Config(

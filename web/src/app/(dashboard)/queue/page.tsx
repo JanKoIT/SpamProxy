@@ -299,6 +299,184 @@ export default function QueuePage() {
           ))}
         </div>
       )}
+
+      {/* Delivery Status (Bounces & Deferrals from Postfix log) */}
+      <DeliveryStatus />
+    </div>
+  );
+}
+
+/* ---------- Delivery Status Component ---------- */
+
+interface DeliveryItem {
+  id: string;
+  queue_id: string;
+  mail_from: string;
+  rcpt_to: string;
+  status: string;
+  dsn: string;
+  relay: string;
+  delay_reason: string | null;
+  created_at: string;
+}
+
+const statusColors: Record<string, string> = {
+  sent: "border-green-500/30 bg-green-500/10 text-green-400",
+  bounced: "border-red-500/30 bg-red-500/10 text-red-400",
+  deferred: "border-yellow-500/30 bg-yellow-500/10 text-yellow-400",
+  rejected: "border-red-500/30 bg-red-500/10 text-red-400",
+};
+
+function DeliveryStatus() {
+  const [items, setItems] = useState<DeliveryItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  const fetchDelivery = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    if (search) params.set("search", search);
+    params.set("page", String(page));
+    params.set("page_size", "20");
+    const res = await fetch(`/api/delivery-status?${params}`);
+    if (res.ok) {
+      const data = await res.json();
+      setItems(data.items || []);
+      setTotal(data.total || 0);
+    }
+  }, [statusFilter, search, page]);
+
+  useEffect(() => {
+    fetchDelivery();
+  }, [fetchDelivery]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">
+          Delivery Status
+          <span className="ml-2 text-sm font-normal text-slate-400">
+            (bounces, deferrals from Postfix log)
+          </span>
+        </h2>
+        <button
+          onClick={fetchDelivery}
+          className="rounded-lg border border-slate-700 p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <RefreshCw className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2">
+        {["", "bounced", "deferred", "sent"].map((s) => (
+          <button
+            key={s}
+            onClick={() => { setStatusFilter(s); setPage(1); }}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+              statusFilter === s
+                ? "bg-blue-600 text-white"
+                : "border border-slate-700 text-slate-400 hover:bg-slate-800"
+            }`}
+          >
+            {s || "All"}
+          </button>
+        ))}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search address or error..."
+          className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-lg border border-slate-800">
+        <table className="w-full text-sm">
+          <thead className="border-b border-slate-800 bg-slate-900 text-xs uppercase text-slate-400">
+            <tr>
+              <th className="px-4 py-3 text-left">Time</th>
+              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">From</th>
+              <th className="px-4 py-3 text-left">To</th>
+              <th className="px-4 py-3 text-left">Relay</th>
+              <th className="px-4 py-3 text-left">Error</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  No delivery status entries found.
+                </td>
+              </tr>
+            )}
+            {items.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-800/60 transition-colors">
+                <td className="whitespace-nowrap px-4 py-3 text-slate-400 text-xs">
+                  {new Date(item.created_at).toLocaleString("de-DE", {
+                    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                  })}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${
+                    statusColors[item.status] ?? "text-slate-400"
+                  }`}>
+                    {item.status}
+                  </span>
+                  {item.dsn && (
+                    <span className="ml-1 text-xs text-slate-500 font-mono">{item.dsn}</span>
+                  )}
+                </td>
+                <td className="max-w-[150px] truncate px-4 py-3 text-slate-300">
+                  {item.mail_from || "(bounce)"}
+                </td>
+                <td className="max-w-[150px] truncate px-4 py-3 text-white">
+                  {item.rcpt_to}
+                </td>
+                <td className="max-w-[150px] truncate px-4 py-3 text-slate-400 font-mono text-xs">
+                  {item.relay}
+                </td>
+                <td className="px-4 py-3">
+                  {item.delay_reason && (
+                    <div className="flex items-start gap-1 text-xs text-red-300 max-w-[300px]">
+                      <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-red-400" />
+                      <span className="break-all">{item.delay_reason}</span>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {total > 20 && (
+        <div className="flex items-center justify-between text-sm text-slate-400">
+          <span>{total} entries</span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page <= 1}
+              className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="px-2 py-1">Page {page}</span>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={page * 20 >= total}
+              className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

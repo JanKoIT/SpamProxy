@@ -1846,6 +1846,60 @@ async def import_keyword_rules(req: KeywordImport):
         return {"status": "ok", "imported": imported, "skipped": skipped}
 
 
+# --- Delivery Status (bounces, deferrals from Postfix log) ---
+
+@app.get("/api/delivery-status")
+async def get_delivery_status(
+    status: str = Query(""),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    search: str = Query(""),
+):
+    async with async_session() as session:
+        from sqlalchemy import text as sql_text
+        where_parts = []
+        params: dict = {}
+        if status:
+            where_parts.append("status = :status")
+            params["status"] = status
+        if search:
+            where_parts.append("(rcpt_to ILIKE :search OR mail_from ILIKE :search OR delay_reason ILIKE :search)")
+            params["search"] = f"%{search}%"
+
+        where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+        count_result = await session.execute(
+            sql_text(f"SELECT COUNT(*) FROM delivery_status {where_clause}"), params
+        )
+        total = count_result.scalar() or 0
+
+        params["limit"] = page_size
+        params["offset"] = (page - 1) * page_size
+        result = await session.execute(
+            sql_text(
+                f"SELECT id, queue_id, mail_from, rcpt_to, status, dsn, relay, delay_reason, created_at "
+                f"FROM delivery_status {where_clause} "
+                f"ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+            ),
+            params,
+        )
+        items = [
+            {
+                "id": str(row.id),
+                "queue_id": row.queue_id,
+                "mail_from": row.mail_from,
+                "rcpt_to": row.rcpt_to,
+                "status": row.status,
+                "dsn": row.dsn,
+                "relay": row.relay,
+                "delay_reason": row.delay_reason,
+                "created_at": str(row.created_at),
+            }
+            for row in result
+        ]
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
 # --- Mail Queue ---
 
 POSTFIX_QUEUE_API = "http://postfix:8026"
