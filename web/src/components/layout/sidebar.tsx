@@ -23,12 +23,14 @@ import {
   Network,
   Type,
   Database,
+  Inbox,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/quarantine", label: "Quarantine", icon: ShieldAlert },
   { href: "/logs", label: "Mail Log", icon: Mail },
+  { href: "/queue", label: "Mail Queue", icon: Inbox },
   { href: "/postfix-log", label: "Postfix Log", icon: Terminal },
   { href: "/settings/domains", label: "Domains", icon: Globe },
   { href: "/settings/security", label: "Security", icon: Shield },

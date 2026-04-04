@@ -1846,6 +1846,106 @@ async def import_keyword_rules(req: KeywordImport):
         return {"status": "ok", "imported": imported, "skipped": skipped}
 
 
+# --- Mail Queue ---
+
+POSTFIX_QUEUE_API = "http://postfix:8026"
+
+
+@app.get("/api/queue")
+async def get_mail_queue():
+    """Get Postfix mail queue."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{POSTFIX_QUEUE_API}/queue")
+            raw = resp.text.strip()
+            if not raw or raw == "[]":
+                return {"items": [], "total": 0}
+            # postqueue -j outputs one JSON per line
+            import json
+            items = []
+            for line in raw.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                    items.append({
+                        "queue_id": item.get("queue_id", ""),
+                        "queue_name": item.get("queue_name", ""),
+                        "arrival_time": item.get("arrival_time", 0),
+                        "message_size": item.get("message_size", 0),
+                        "sender": item.get("sender", ""),
+                        "recipients": [
+                            {
+                                "address": r.get("address", ""),
+                                "delay_reason": r.get("delay_reason", ""),
+                            }
+                            for r in item.get("recipients", [])
+                        ],
+                    })
+                except json.JSONDecodeError:
+                    continue
+            return {"items": items, "total": len(items)}
+    except Exception as e:
+        logger.warning("Queue fetch failed: %s", e)
+        return {"items": [], "total": 0, "error": str(e)}
+
+
+@app.post("/api/queue/flush")
+async def flush_queue():
+    """Flush (retry) all deferred messages."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/flush")
+            return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/queue/{queue_id}/requeue")
+async def requeue_message(queue_id: str):
+    """Requeue a specific message for redelivery."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/requeue {queue_id}")
+            return {"status": "ok", "queue_id": queue_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/queue/{queue_id}/delete")
+async def delete_queue_message(queue_id: str):
+    """Delete a message from the queue."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/delete {queue_id}")
+            return {"status": "ok", "queue_id": queue_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/queue/{queue_id}/hold")
+async def hold_queue_message(queue_id: str):
+    """Put a message on hold."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/hold {queue_id}")
+            return {"status": "ok", "queue_id": queue_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/queue/{queue_id}/release")
+async def release_queue_message(queue_id: str):
+    """Release a held message."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/release {queue_id}")
+            return {"status": "ok", "queue_id": queue_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- Bayes Training ---
 
 from .bayes_trainer import train_spam_monthly, train_ham_corpus, _get_last_trained, _get_trained_months, _generate_months, TRAIN_START_YEAR, TRAIN_START_MONTH

@@ -5,6 +5,7 @@ export const config = {
     "/dashboard/:path*",
     "/quarantine/:path*",
     "/logs/:path*",
+    "/queue/:path*",
     "/settings/:path*",
     "/users/:path*",
   ],

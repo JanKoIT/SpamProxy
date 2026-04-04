@@ -38,4 +38,9 @@ chown -R postfix:postfix /var/spool/postfix
 mkdir -p /var/log/postfix
 
 echo "Postfix configured with PostgreSQL domain routing (host=$PGHOST, db=$PGDB)"
+
+# Start queue API server in background (port 8026, internal only)
+socat TCP-LISTEN:8026,reuseaddr,fork EXEC:/queue-api.sh &
+echo "Queue API listening on port 8026"
+
 exec "$@"
