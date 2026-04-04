@@ -37,9 +37,14 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("de-DE", {
-    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, "0");
+  const mon = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  const hour = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const sec = String(d.getSeconds()).padStart(2, "0");
+  return `${day}.${mon}.${year} ${hour}:${min}:${sec}`;
 }
 
 export default function LogsPage() {
