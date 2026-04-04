@@ -88,7 +88,7 @@ class ContentFilterHandler:
                           "sasl_username=" in str(parsed.get("Received", ""))
             direction = "outbound" if is_outgoing else "inbound"
 
-            # For outgoing: check sender domain is verified and active
+            # For outgoing: check sender domain is verified, active, and has SPF+DKIM
             if is_outgoing and "@" in mail_from:
                 sender_domain = mail_from.split("@")[1].lower()
                 async with async_session() as check_db:
@@ -99,12 +99,59 @@ class ContentFilterHandler:
                             SenderDomain.is_active.is_(True),
                         )
                     )
-                    if not sd_result.scalar_one_or_none():
+                    sd = sd_result.scalar_one_or_none()
+                    if not sd:
                         logger.warning(
                             "REJECTED outgoing: sender domain %s not verified",
                             sender_domain,
                         )
-                        return f"550 Absenderdomain {sender_domain} ist nicht verifiziert. Bitte im SpamProxy Web-Interface freischalten."
+                        return f"550 Sender domain {sender_domain} is not verified. Please activate it in the SpamProxy web interface."
+
+                    # Auto-refresh DNS status if stale (older than 1 hour)
+                    if not sd.last_dns_check or \
+                       (datetime.now(timezone.utc) - sd.last_dns_check.replace(tzinfo=timezone.utc)).total_seconds() > 3600:
+                        try:
+                            from .api import _check_spf, _check_dkim, Setting
+                            proxy_hostname = "localhost"
+                            s_result = await check_db.execute(
+                                select(Setting).where(Setting.key == "proxy_hostname")
+                            )
+                            s = s_result.scalar_one_or_none()
+                            if s and s.value:
+                                proxy_hostname = str(s.value).strip('"')
+
+                            spf_st, spf_rec, spf_inc = _check_spf(sender_domain, proxy_hostname)
+                            sd.spf_status = spf_st
+                            sd.spf_record = spf_rec
+                            sd.spf_includes_proxy = spf_inc
+
+                            dkim_sel = sd.dkim_selector or "spamproxy"
+                            dkim_st, dkim_rec = _check_dkim(sender_domain, dkim_sel)
+                            sd.dkim_status = dkim_st
+                            sd.dkim_record = dkim_rec
+
+                            sd.last_dns_check = datetime.now(timezone.utc)
+                            await check_db.commit()
+                            logger.info("Auto DNS check for %s: SPF=%s(proxy=%s) DKIM=%s",
+                                       sender_domain, spf_st, spf_inc, dkim_st)
+                        except Exception:
+                            logger.warning("Auto DNS check failed for %s", sender_domain)
+
+                    # Check SPF includes proxy
+                    if not sd.spf_includes_proxy:
+                        logger.warning(
+                            "REJECTED outgoing: sender domain %s SPF does not include proxy",
+                            sender_domain,
+                        )
+                        return f"550 Sender domain {sender_domain}: SPF record does not include the proxy server. Add the proxy to your SPF record."
+
+                    # Check DKIM is configured
+                    if sd.dkim_status != "ok":
+                        logger.warning(
+                            "REJECTED outgoing: sender domain %s has no DKIM record",
+                            sender_domain,
+                        )
+                        return f"550 Sender domain {sender_domain}: DKIM record not found. Generate a DKIM key in the SpamProxy web interface and add the DNS record."
 
             # Apply whitelist/blacklist and scoring rules
             final_score = rspamd_score
