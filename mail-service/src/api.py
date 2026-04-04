@@ -1907,7 +1907,7 @@ async def requeue_message(queue_id: str):
     """Requeue a specific message for redelivery."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{POSTFIX_QUEUE_API}/requeue {queue_id}")
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/requeue/{queue_id}")
             return {"status": "ok", "queue_id": queue_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1918,7 +1918,7 @@ async def delete_queue_message(queue_id: str):
     """Delete a message from the queue."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{POSTFIX_QUEUE_API}/delete {queue_id}")
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/delete/{queue_id}")
             return {"status": "ok", "queue_id": queue_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1929,7 +1929,7 @@ async def hold_queue_message(queue_id: str):
     """Put a message on hold."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{POSTFIX_QUEUE_API}/hold {queue_id}")
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/hold/{queue_id}")
             return {"status": "ok", "queue_id": queue_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1940,7 +1940,7 @@ async def release_queue_message(queue_id: str):
     """Release a held message."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{POSTFIX_QUEUE_API}/release {queue_id}")
+            resp = await client.post(f"{POSTFIX_QUEUE_API}/release/{queue_id}")
             return {"status": "ok", "queue_id": queue_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
