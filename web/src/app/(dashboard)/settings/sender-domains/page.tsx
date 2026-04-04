@@ -485,27 +485,51 @@ function DomainCard({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {domain.is_verified ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Can Send? */}
+          {domain.is_verified && domain.is_active && domain.spf_includes_proxy && domain.dkim_status === "ok" ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 border border-green-500/30 px-2.5 py-0.5 text-xs font-medium text-green-400">
               <CheckCircle className="h-3 w-3" />
-              Verified
+              Ready to send
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 px-2.5 py-0.5 text-xs font-medium text-yellow-400">
-              <AlertTriangle className="h-3 w-3" />
-              Not Verified
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/30 px-2.5 py-0.5 text-xs font-medium text-red-400">
+              <XCircle className="h-3 w-3" />
+              Cannot send
             </span>
           )}
-          {domain.is_active ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 border border-green-500/30 px-2.5 py-0.5 text-xs font-medium text-green-400">
-              Aktiv
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/10 border border-slate-500/30 px-2.5 py-0.5 text-xs font-medium text-slate-400">
-              Inaktiv
-            </span>
-          )}
+          {/* Individual checks */}
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
+            domain.is_verified
+              ? "bg-green-500/10 border-green-500/30 text-green-400"
+              : "bg-red-500/10 border-red-500/30 text-red-400"
+          }`}>
+            {domain.is_verified ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+            Domain
+          </span>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
+            domain.spf_includes_proxy
+              ? "bg-green-500/10 border-green-500/30 text-green-400"
+              : "bg-red-500/10 border-red-500/30 text-red-400"
+          }`}>
+            {domain.spf_includes_proxy ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+            SPF
+          </span>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
+            domain.dkim_status === "ok"
+              ? "bg-green-500/10 border-green-500/30 text-green-400"
+              : "bg-red-500/10 border-red-500/30 text-red-400"
+          }`}>
+            {domain.dkim_status === "ok" ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+            DKIM
+          </span>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
+            domain.is_active
+              ? "bg-green-500/10 border-green-500/30 text-green-400"
+              : "bg-slate-500/10 border-slate-500/30 text-slate-400"
+          }`}>
+            {domain.is_active ? "Active" : "Inactive"}
+          </span>
         </div>
       </div>
 
