@@ -428,7 +428,9 @@ class MailLogItem(BaseModel):
     direction: str
     action: str
     rspamd_score: float | None
+    ai_score: float | None
     final_score: float | None
+    rspamd_symbols: dict | None
     client_ip: str | None
     created_at: str
 
@@ -471,7 +473,9 @@ async def get_logs(
                 direction=m.direction,
                 action=m.action,
                 rspamd_score=m.rspamd_score,
+                ai_score=m.ai_score,
                 final_score=m.final_score,
+                rspamd_symbols=m.rspamd_symbols,
                 client_ip=m.client_ip,
                 created_at=str(m.created_at),
             )
