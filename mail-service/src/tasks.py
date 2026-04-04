@@ -2,8 +2,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
-from .db import async_session
+from sqlalchemy import select, text
+from .db import async_session, engine
 from .quarantine.manager import QuarantineManager
 from .quarantine.models import Setting
 
@@ -34,6 +34,32 @@ DEFAULT_SETTINGS = [
 ]
 
 
+async def ensure_tables():
+    """Create any missing tables."""
+    async with async_session() as session:
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS delivery_status (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                queue_id VARCHAR(20) NOT NULL,
+                mail_from VARCHAR(512),
+                rcpt_to VARCHAR(512) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                dsn VARCHAR(20),
+                relay VARCHAR(255),
+                delay_reason TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_delivery_status_created ON delivery_status(created_at DESC)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_delivery_status_status ON delivery_status(status)"
+        ))
+        await session.commit()
+        logger.info("Database tables verified")
+
+
 async def ensure_default_settings():
     """Insert any missing default settings into the database."""
     async with async_session() as session:
@@ -50,11 +76,12 @@ async def ensure_default_settings():
 
 async def start_background_tasks():
     """Run periodic background tasks."""
-    # Ensure all settings exist on startup
+    # Ensure all tables and settings exist on startup
     try:
+        await ensure_tables()
         await ensure_default_settings()
     except Exception:
-        logger.exception("Failed to ensure default settings")
+        logger.exception("Failed startup tasks")
 
     while True:
         try:

@@ -60,21 +60,10 @@ class QuarantineManager:
         if not log_entry:
             return False
 
-        # Deliver the message to the backend
+        # Deliver via Postfix re-inject port (bypasses content filter + rspamd)
+        # Postfix handles domain routing to the correct backend server
         try:
-            rcpt_domain = log_entry.rcpt_to[0].split("@")[1] if log_entry.rcpt_to else None
-            if rcpt_domain:
-                domain_result = await self.session.execute(
-                    select(Domain).where(Domain.domain == rcpt_domain, Domain.is_active.is_(True))
-                )
-                domain = domain_result.scalar_one_or_none()
-                backend_host = domain.backend_host if domain else settings.smtp_backend_host
-                backend_port = domain.backend_port if domain else settings.smtp_backend_port
-            else:
-                backend_host = settings.smtp_backend_host
-                backend_port = settings.smtp_backend_port
-
-            with smtplib.SMTP(backend_host, backend_port, timeout=30) as smtp:
+            with smtplib.SMTP("postfix", 10025, timeout=30) as smtp:
                 smtp.sendmail(
                     log_entry.mail_from or "",
                     log_entry.rcpt_to,
