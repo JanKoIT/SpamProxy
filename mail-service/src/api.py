@@ -2094,7 +2094,7 @@ async def download_sieve_kit():
         setting = result.scalar_one_or_none()
         proxy_host = str(setting.value).strip('"') if setting and setting.value else "localhost"
 
-    api_url = f"http://{proxy_host}:8025"
+    api_url = f"https://{proxy_host}"
 
     files = {
         "learn-spam.sh": f'''#!/bin/bash

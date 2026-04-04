@@ -8,7 +8,7 @@ def generate_learn_script(
     max_age: int = 7,
     learn_ham: bool = True,
 ) -> str:
-    api_url = f"http://{proxy_host}:8025"
+    api_url = f"https://{proxy_host}"
     return f'''#!/bin/bash
 set -euo pipefail
 # SpamProxy Dovecot Junk Learner
@@ -32,23 +32,29 @@ log()  {{ echo "$(date '+%H:%M:%S') [learn] $1"; }}
 warn() {{ echo "$(date '+%H:%M:%S') [learn] WARNING: $1"; }}
 
 mkdir -p "$STATE_DIR"
-SPAM_LEARNED=0
-HAM_LEARNED=0
-SKIPPED=0
-ERRORS=0
 USERS_FOUND=0
+
+# Use temp files for counters (subshell-safe)
+COUNTER_DIR=$(mktemp -d)
+echo 0 > "$COUNTER_DIR/spam"
+echo 0 > "$COUNTER_DIR/ham"
+echo 0 > "$COUNTER_DIR/skipped"
+echo 0 > "$COUNTER_DIR/errors"
+trap "rm -rf $COUNTER_DIR" EXIT
 
 is_processed() {{ [ -f "$STATE_DIR/${{2}}_${{1}}" ]; }}
 mark_processed() {{ touch "$STATE_DIR/${{2}}_${{1}}"; }}
+
+inc() {{ echo $(( $(cat "$COUNTER_DIR/$1") + 1 )) > "$COUNTER_DIR/$1"; }}
 
 learn_message() {{
     local file="$1" type="$2"
     local hash
     hash=$(echo "$file" | md5sum | cut -d' ' -f1)
-    is_processed "$hash" "$type" && {{ SKIPPED=$((SKIPPED + 1)); return 0; }}
+    is_processed "$hash" "$type" && {{ inc skipped; return 0; }}
 
     local code
-    code=$(curl -s -o /dev/null -w "%{{http_code}}" \\
+    code=$(curl -sk -o /dev/null -w "%{{http_code}}" \\
         -X POST "${{SPAMPROXY_URL}}/api/learn/${{type}}" \\
         -H "Content-Type: application/octet-stream" \\
         --data-binary "@${{file}}" \\
@@ -56,13 +62,9 @@ learn_message() {{
 
     if [ "$code" = "200" ]; then
         mark_processed "$hash" "$type"
-        if [ "$type" = "spam" ]; then
-            SPAM_LEARNED=$((SPAM_LEARNED + 1))
-        else
-            HAM_LEARNED=$((HAM_LEARNED + 1))
-        fi
+        inc "$type"
     else
-        ERRORS=$((ERRORS + 1))
+        inc errors
     fi
 }}
 
@@ -149,8 +151,8 @@ find "$STATE_DIR" -type f -mtime +90 -delete 2>/dev/null || true
 log ""
 log "=== Results ==="
 log "Users:   $USERS_FOUND"
-log "Spam:    $SPAM_LEARNED learned"
-log "Ham:     $HAM_LEARNED learned"
-log "Skipped: $SKIPPED"
-log "Errors:  $ERRORS"
+log "Spam:    $(cat $COUNTER_DIR/spam) learned"
+log "Ham:     $(cat $COUNTER_DIR/ham) learned"
+log "Skipped: $(cat $COUNTER_DIR/skipped)"
+log "Errors:  $(cat $COUNTER_DIR/errors)"
 '''
