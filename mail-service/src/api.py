@@ -2083,7 +2083,30 @@ async def create_scanner_client(req: ScannerClientRequest):
         await session.commit()
 
     # Generate client config
-    client_worker_proxy = f'''# SpamProxy Remote Scanner Config
+    # Write server keypair to rspamd worker-normal.inc
+    # The server needs the PRIVATE key to decrypt incoming requests
+    import os
+    keypair_conf = f'''
+# Keypair for scanner client: {req.name}
+keypair {{
+    pubkey = "{pubkey_str}";
+    privkey = "{privkey_str}";
+    id = "{kid_str}";
+    type = "kex";
+    algorithm = "curve25519";
+}}
+'''
+    normal_inc = "/etc/rspamd/local.d/worker-normal.inc"
+    try:
+        # Append keypair to worker-normal.inc via shared volume
+        with open(normal_inc, "a") as f:
+            f.write(keypair_conf)
+        logger.info("Added keypair for client %s to worker-normal.inc", req.name)
+    except Exception as e:
+        logger.warning("Could not write keypair to %s: %s (add manually)", normal_inc, e)
+
+    # Client gets the PUBLIC key to encrypt scan requests
+    client_worker_proxy = f'''# SpamProxy Remote Scanner Config for "{req.name}"
 # Place this in /etc/rspamd/local.d/worker-proxy.inc on the CLIENT server
 # Then restart rspamd: systemctl restart rspamd
 
@@ -2105,27 +2128,39 @@ upstream "scan" {{
         "keypair_id": kid_str,
         "proxy_host": proxy_host,
         "client_config": client_worker_proxy,
+        "server_keypair_added": True,
+        "note": "Restart rspamd on the SpamProxy server to activate the keypair",
         "setup_instructions": f"""Scanner Client Setup for "{req.name}":
 
-1. On the CLIENT server, install rspamd:
+=== On the SPAMPROXY SERVER ({proxy_host}) ===
+
+1. Restart rspamd to load the new keypair:
+   docker compose restart rspamd
+
+2. Open firewall for the client IP:
+   ./scripts/deploy.sh federation-add {req.client_ip or '<CLIENT-IP>'} "{req.name}"
+
+=== On the CLIENT SERVER ===
+
+3. Install rspamd:
    apt install rspamd
 
-2. Create /etc/rspamd/local.d/worker-proxy.inc with the config above
+4. Create /etc/rspamd/local.d/worker-proxy.inc with the config above
 
-3. Disable the local normal worker (scanning is done by SpamProxy):
+5. Disable the local normal worker (scanning is done by SpamProxy):
    echo 'enabled = false;' > /etc/rspamd/local.d/worker-normal.inc
 
-4. Configure Postfix to use the local rspamd proxy as milter:
+6. Configure Postfix to use the local rspamd proxy as milter:
    postconf -e 'smtpd_milters = inet:localhost:11332'
    postconf -e 'milter_default_action = accept'
 
-5. Restart both services:
+7. Restart both services:
    systemctl restart rspamd
    systemctl restart postfix
 
-Mail flow:
+=== Mail Flow ===
   Client Postfix → local rspamd proxy (port 11332)
-    → SpamProxy rspamd (port 11333, encrypted)
+    → SpamProxy rspamd (port 11333, encrypted with curve25519)
       → scan result back to client
         → Postfix delivers locally (no double scanning)
 """,
