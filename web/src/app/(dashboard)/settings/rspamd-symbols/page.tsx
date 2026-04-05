@@ -47,8 +47,25 @@ export default function RspamdSymbolsPage() {
       ]);
       if (!symbolsRes.ok) throw new Error("Failed to load symbols");
       if (!overridesRes.ok) throw new Error("Failed to load overrides");
-      const symbolsData: RspamdSymbol[] = await symbolsRes.json();
+      const rawData = await symbolsRes.json();
       const overridesData: SymbolOverrides = await overridesRes.json();
+      // API returns [{group, rules: [{symbol, weight, description}]}]
+      // Flatten into [{symbol, weight, description, group}]
+      const symbolsData: RspamdSymbol[] = [];
+      if (Array.isArray(rawData)) {
+        for (const grp of rawData) {
+          const groupName = grp.group || "ungrouped";
+          const rules = grp.rules || [];
+          for (const rule of rules) {
+            symbolsData.push({
+              symbol: rule.symbol || "",
+              weight: rule.weight ?? 0,
+              description: rule.description || "",
+              group: groupName,
+            });
+          }
+        }
+      }
       setSymbols(symbolsData);
       setOverrides(overridesData);
     } catch (err) {
