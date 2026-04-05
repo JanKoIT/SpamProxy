@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/hooks/use-demo-fetch";
 
 import { useEffect, useState, useCallback } from "react";
 import { QuarantineList } from "@/components/quarantine/quarantine-list";
@@ -29,7 +30,7 @@ export default function QuarantinePage() {
       search,
     });
     try {
-      const res = await fetch(`/api/quarantine?${params}`);
+      const res = await apiFetch(`/api/quarantine?${params}`);
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);

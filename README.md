@@ -10,20 +10,24 @@ SpamProxy is placed as MX in front of your actual mail server and filters both i
 |---|---|
 | ![Login](docs/screenshots/login.png) | ![Dashboard](docs/screenshots/dashboard.png) |
 | Login | Dashboard |
-| ![Quarantine](docs/screenshots/quarantine.png) | ![Mail Log](docs/screenshots/mail-log.png) |
+| ![Quarantine](docs/screenshots/quarantine.png) | ![Mail Log](docs/screenshots/logs.png) |
 | Quarantine | Mail Log |
-| ![Postfix Log](docs/screenshots/postfix-log.png) | ![Security](docs/screenshots/security.png) |
-| Postfix Log | Security & Scanning |
-| ![Scoring](docs/screenshots/scoring.png) | ![Blocklists](docs/screenshots/blocklists.png) |
-| Score Adjustments | DNS Blocklists |
-| ![Access Lists](docs/screenshots/access-lists.png) | ![DKIM](docs/screenshots/dkim.png) |
-| Whitelist / Blacklist | DKIM Keys |
-| ![AI Test](docs/screenshots/ai-test.png) | ![Sender Domains](docs/screenshots/sender-domains.png) |
-| AI Spam Test | Sender Domains |
-| ![Outgoing Auth](docs/screenshots/outgoing-auth.png) | ![Federation](docs/screenshots/federation.png) |
-| Outgoing SMTP Auth | Federation |
-| ![Domains](docs/screenshots/domains.png) | ![Settings](docs/screenshots/settings.png) |
-| Domain Routing | Settings |
+| ![Mail Queue](docs/screenshots/queue.png) | ![Postfix Log](docs/screenshots/postfix-log.png) |
+| Mail Queue | Postfix Log |
+| ![Security](docs/screenshots/settings-security.png) | ![rspamd Rules](docs/screenshots/settings-rspamd-symbols.png) |
+| Security & Scanning | rspamd Rules |
+| ![Blocklists](docs/screenshots/settings-blocklists.png) | ![Whitelist/Blacklist](docs/screenshots/settings-access-lists.png) |
+| DNS Blocklists | Whitelist / Blacklist |
+| ![Scoring](docs/screenshots/settings-scoring.png) | ![Keywords](docs/screenshots/settings-keywords.png) |
+| Score Adjustments | Keyword Rules |
+| ![DKIM](docs/screenshots/settings-dkim.png) | ![Bayes Training](docs/screenshots/settings-bayes.png) |
+| DKIM Keys | Bayes Training |
+| ![AI Test](docs/screenshots/settings-ai-test.png) | ![Domains](docs/screenshots/settings-domains.png) |
+| AI Spam Test | Domain Routing |
+| ![Sender Domains](docs/screenshots/settings-sender-domains.png) | ![Outgoing Auth](docs/screenshots/users.png) |
+| Sender Domains | Outgoing SMTP Auth |
+| ![Federation](docs/screenshots/settings-federation.png) | ![Settings](docs/screenshots/settings.png) |
+| Federation | Settings |
 
 ## Features
 

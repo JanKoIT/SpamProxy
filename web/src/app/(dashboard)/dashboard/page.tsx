@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/hooks/use-demo-fetch";
 
 import { useEffect, useState, useCallback } from "react";
 import { StatsCards } from "@/components/dashboard/stats-cards";
@@ -18,7 +19,7 @@ export default function DashboardPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch("/api/stats");
+      const res = await apiFetch("/api/stats");
       if (res.ok) setStats(await res.json());
     } catch {
       // ignore

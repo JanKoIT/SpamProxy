@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/hooks/use-demo-fetch";
 
 import { useEffect, useState, useCallback } from "react";
 import { LearnButtons } from "@/components/logs/learn-buttons";
@@ -68,7 +69,7 @@ export default function LogsPage() {
     if (action) params.set("action", action);
     if (search) params.set("search", search);
     try {
-      const res = await fetch(`/api/logs?${params}`);
+      const res = await apiFetch(`/api/logs?${params}`);
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
