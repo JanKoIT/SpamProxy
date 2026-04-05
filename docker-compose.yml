@@ -46,6 +46,17 @@ services:
       retries: 5
       start_period: 120s
 
+  unbound:
+    image: mvance/unbound:latest
+    restart: unless-stopped
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "drill", "@127.0.0.1", "google.com"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   rspamd:
     image: rspamd/rspamd:latest
     restart: unless-stopped
@@ -60,6 +71,8 @@ services:
       redis:
         condition: service_healthy
       clamav:
+        condition: service_started
+      unbound:
         condition: service_started
     # Ports nur intern - rspamd WebUI via Nginx oder: docker compose exec rspamd rspamadm ...
 
