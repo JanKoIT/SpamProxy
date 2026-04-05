@@ -25,6 +25,7 @@ import {
   Database,
   Inbox,
   Server,
+  Activity,
 } from "lucide-react";
 
 const navItems = [
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/quarantine", label: "Quarantine", icon: ShieldAlert },
   { href: "/logs", label: "Mail Log", icon: Mail },
   { href: "/queue", label: "Mail Queue", icon: Inbox },
+  { href: "/scan-history", label: "Scan History", icon: Activity },
   { href: "/postfix-log", label: "Postfix Log", icon: Terminal },
   { href: "/settings/domains", label: "Domains", icon: Globe },
   { href: "/settings/security", label: "Security", icon: Shield },

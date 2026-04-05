@@ -29,6 +29,7 @@ export const config = {
     "/quarantine/:path*",
     "/logs/:path*",
     "/queue/:path*",
+    "/scan-history/:path*",
     "/settings/:path*",
     "/users/:path*",
   ],

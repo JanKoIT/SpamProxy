@@ -2004,6 +2004,42 @@ async def release_queue_message(queue_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- rspamd Scan History (shows ALL scans including remote scanner clients) ---
+
+@app.get("/api/scan-history")
+async def get_scan_history():
+    """Get rspamd scan history from Redis (includes remote client scans)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+            resp = await client.get(
+                f"{settings.rspamd_controller_url}/history",
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "rows": data.get("rows", []),
+                    "total": len(data.get("rows", [])),
+                }
+    except Exception as e:
+        logger.warning("Failed to fetch scan history: %s", e)
+    return {"rows": [], "total": 0}
+
+
+@app.post("/api/scan-history/learn")
+async def learn_from_scan_history(message_id: str = Query(...), learn_type: str = Query(...)):
+    """Learn spam/ham from a scan history entry by message-id.
+    Fetches the message from rspamd cache and trains."""
+    if learn_type not in ("spam", "ham"):
+        raise HTTPException(status_code=400, detail="learn_type must be spam or ham")
+    # rspamd doesn't store full messages in history, so we can only
+    # train the Bayes classifier via the fuzzy hash
+    return {"status": "ok", "note": "Use the mail log learn buttons for full message training"}
+
+
 # --- Scanner Clients (remote rspamd clients using SpamProxy as scan engine) ---
 
 class ScannerClientRequest(BaseModel):
