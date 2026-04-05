@@ -26,8 +26,9 @@ def parse_rspamd_score(parsed_msg) -> tuple[float, dict]:
     score = 0.0
     symbols = {}
 
-    spamd_result = parsed_msg.get("X-Spamd-Result", "")
-    if spamd_result:
+    # Check ALL X-Spamd-Result headers (mail may have multiple)
+    spamd_results = parsed_msg.get_all("X-Spamd-Result") or []
+    for spamd_result in spamd_results:
         spamd_str = str(spamd_result)
         score_match = re.search(r"\[\s*(-?[\d.]+)\s*/\s*[\d.]+\s*\]", spamd_str)
         if score_match:
@@ -35,27 +36,56 @@ def parse_rspamd_score(parsed_msg) -> tuple[float, dict]:
                 score = float(score_match.group(1))
             except ValueError:
                 pass
-        for sym_match in re.finditer(r"(\w+)\((-?[\d.]+)\)", spamd_str):
-            symbols[sym_match.group(1)] = {"score": float(sym_match.group(2))}
+            for sym_match in re.finditer(r"(\w+)\((-?[\d.]+)\)", spamd_str):
+                symbols[sym_match.group(1)] = {"score": float(sym_match.group(2))}
+            break  # Use first valid result
 
+    # Fallback: X-Spam-Score / X-Spam-Status headers
     if score == 0.0:
-        spam_score = parsed_msg.get("X-Spam-Score", "")
-        if spam_score:
-            try:
-                score = float(str(spam_score).strip())
-            except ValueError:
-                pass
+        for header_name in ["X-Spam-Score", "X-Spam-Status"]:
+            header_val = parsed_msg.get(header_name, "")
+            if header_val:
+                val_str = str(header_val)
+                # X-Spam-Status: Yes, score=6.50
+                score_match = re.search(r"score=(-?[\d.]+)", val_str)
+                if score_match:
+                    try:
+                        score = float(score_match.group(1))
+                        break
+                    except ValueError:
+                        pass
+                # Plain number
+                try:
+                    score = float(val_str.strip())
+                    break
+                except ValueError:
+                    pass
+
+    if score == 0.0 and not spamd_results:
+        logger.warning("No rspamd headers found - mail may not have been scanned")
 
     return score, symbols
 
 
 def extract_client_ip(parsed_msg) -> str:
-    received = parsed_msg.get("Received", "")
-    if received:
-        ip_match = re.search(r"\[(\d+\.\d+\.\d+\.\d+)\]", str(received))
+    """Extract the real external client IP from Received headers."""
+    # Get ALL Received headers - the last one is usually the external connection
+    received_list = parsed_msg.get_all("Received") or []
+
+    external_ip = ""
+    for received in received_list:
+        received_str = str(received)
+        ip_match = re.search(r"\[(\d+\.\d+\.\d+\.\d+)\]", received_str)
         if ip_match:
-            return ip_match.group(1)
-    return ""
+            ip = ip_match.group(1)
+            # Skip Docker/private IPs, prefer external IPs
+            if ip.startswith("172.") or ip.startswith("10.") or ip.startswith("192.168.") or ip == "127.0.0.1":
+                if not external_ip:
+                    external_ip = ip  # Keep as fallback
+            else:
+                return ip  # Found external IP
+
+    return external_ip
 
 
 class ContentFilterHandler:
