@@ -24,6 +24,7 @@ import {
   Type,
   Database,
   Inbox,
+  Server,
 } from "lucide-react";
 
 const navItems = [
@@ -46,6 +47,7 @@ const navItems = [
   { href: "/users", label: "Outgoing Auth", icon: Users },
   { href: "/settings/sender-domains", label: "Sender Domains", icon: Send },
   { href: "/settings/federation", label: "Federation", icon: Network },
+  { href: "/settings/scanner-clients", label: "Scanner Clients", icon: Server },
 ];
 
 export default function Sidebar() {

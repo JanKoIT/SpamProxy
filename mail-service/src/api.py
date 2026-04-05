@@ -2004,6 +2004,188 @@ async def release_queue_message(queue_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- Scanner Clients (remote rspamd clients using SpamProxy as scan engine) ---
+
+class ScannerClientRequest(BaseModel):
+    name: str
+    client_ip: str | None = None
+    description: str | None = None
+
+
+@app.get("/api/scanner-clients")
+async def list_scanner_clients():
+    async with async_session() as session:
+        from sqlalchemy import text as sql_text
+        result = await session.execute(sql_text(
+            "SELECT id, name, client_ip, pubkey, keypair_id, is_active, description, created_at "
+            "FROM scanner_clients ORDER BY name"
+        ))
+        return [
+            {
+                "id": str(row.id),
+                "name": row.name,
+                "client_ip": row.client_ip,
+                "pubkey": row.pubkey,
+                "keypair_id": row.keypair_id,
+                "is_active": row.is_active,
+                "description": row.description,
+                "created_at": str(row.created_at),
+            }
+            for row in result
+        ]
+
+
+@app.post("/api/scanner-clients")
+async def create_scanner_client(req: ScannerClientRequest):
+    """Generate a keypair and create a scanner client."""
+    import subprocess
+
+    # Generate keypair via rspamadm
+    try:
+        result = subprocess.run(
+            ["rspamadm", "keypair"],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode != 0:
+            # Try via docker exec if rspamadm not available locally
+            result = subprocess.run(
+                ["docker", "compose", "exec", "-T", "rspamd", "rspamadm", "keypair"],
+                capture_output=True, timeout=10,
+            )
+    except FileNotFoundError:
+        result = subprocess.run(
+            ["docker", "compose", "exec", "-T", "rspamd", "rspamadm", "keypair"],
+            capture_output=True, timeout=10,
+        )
+
+    output = result.stdout.decode()
+    if not output or "pubkey" not in output:
+        raise HTTPException(status_code=500, detail="Failed to generate keypair")
+
+    # Parse keypair output
+    import re
+    pubkey = re.search(r'pubkey\s*=\s*"([^"]+)"', output)
+    privkey = re.search(r'privkey\s*=\s*"([^"]+)"', output)
+    keypair_id = re.search(r'id\s*=\s*"([^"]+)"', output)
+
+    if not pubkey or not privkey or not keypair_id:
+        raise HTTPException(status_code=500, detail="Failed to parse keypair")
+
+    # Get proxy hostname for client config
+    async with async_session() as session:
+        s_result = await session.execute(select(Setting).where(Setting.key == "proxy_hostname"))
+        s = s_result.scalar_one_or_none()
+        proxy_host = str(s.value).strip('"') if s and s.value else "localhost"
+
+        # Store client
+        from sqlalchemy import text as sql_text
+        await session.execute(sql_text(
+            "INSERT INTO scanner_clients (name, client_ip, pubkey, privkey, keypair_id, description) "
+            "VALUES (:name, :ip, :pub, :priv, :kid, :desc)"
+        ), {
+            "name": req.name,
+            "ip": req.client_ip,
+            "pub": pubkey.group(1),
+            "priv": privkey.group(1),
+            "kid": keypair_id.group(1),
+            "desc": req.description,
+        })
+        await session.commit()
+
+    # Generate client config
+    client_worker_proxy = f'''# SpamProxy Remote Scanner Config
+# Place this in /etc/rspamd/local.d/worker-proxy.inc on the CLIENT server
+# Then restart rspamd: systemctl restart rspamd
+
+bind_socket = "*:11332";
+milter = yes;
+timeout = 120s;
+
+upstream "scan" {{
+    default = yes;
+    hosts = "round-robin:{proxy_host}:11333:1";
+    key = "{pubkey.group(1)}";
+    compression = yes;
+}}
+'''
+
+    return {
+        "status": "ok",
+        "pubkey": pubkey.group(1),
+        "keypair_id": keypair_id.group(1),
+        "proxy_host": proxy_host,
+        "client_config": client_worker_proxy,
+        "setup_instructions": f"""Scanner Client Setup for "{req.name}":
+
+1. On the CLIENT server, install rspamd:
+   apt install rspamd
+
+2. Create /etc/rspamd/local.d/worker-proxy.inc with the config above
+
+3. Disable the local normal worker (scanning is done by SpamProxy):
+   echo 'enabled = false;' > /etc/rspamd/local.d/worker-normal.inc
+
+4. Configure Postfix to use the local rspamd proxy as milter:
+   postconf -e 'smtpd_milters = inet:localhost:11332'
+   postconf -e 'milter_default_action = accept'
+
+5. Restart both services:
+   systemctl restart rspamd
+   systemctl restart postfix
+
+Mail flow:
+  Client Postfix → local rspamd proxy (port 11332)
+    → SpamProxy rspamd (port 11333, encrypted)
+      → scan result back to client
+        → Postfix delivers locally (no double scanning)
+""",
+    }
+
+
+@app.delete("/api/scanner-clients/{client_id}")
+async def delete_scanner_client(client_id: UUID):
+    async with async_session() as session:
+        from sqlalchemy import text as sql_text
+        await session.execute(sql_text(
+            "DELETE FROM scanner_clients WHERE id = :id"
+        ), {"id": client_id})
+        await session.commit()
+        return {"status": "ok"}
+
+
+@app.get("/api/scanner-clients/{client_id}/config")
+async def get_scanner_client_config(client_id: UUID):
+    """Get the client worker-proxy.inc config for a specific client."""
+    async with async_session() as session:
+        from sqlalchemy import text as sql_text
+        result = await session.execute(sql_text(
+            "SELECT pubkey, name FROM scanner_clients WHERE id = :id"
+        ), {"id": client_id})
+        row = result.first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Client not found")
+
+        s_result = await session.execute(select(Setting).where(Setting.key == "proxy_hostname"))
+        s = s_result.scalar_one_or_none()
+        proxy_host = str(s.value).strip('"') if s and s.value else "localhost"
+
+    config = f'''# SpamProxy Remote Scanner Config for "{row.name}"
+# Place in /etc/rspamd/local.d/worker-proxy.inc on the client server
+
+bind_socket = "*:11332";
+milter = yes;
+timeout = 120s;
+
+upstream "scan" {{
+    default = yes;
+    hosts = "round-robin:{proxy_host}:11333:1";
+    key = "{row.pubkey}";
+    compression = yes;
+}}
+'''
+    return PlainTextResponse(config, media_type="text/plain")
+
+
 # --- rspamd Symbols ---
 
 @app.get("/api/rspamd-symbols")

@@ -56,6 +56,19 @@ async def ensure_tables():
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_delivery_status_status ON delivery_status(status)"
         ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS scanner_clients (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                name VARCHAR(255) NOT NULL,
+                client_ip VARCHAR(45),
+                pubkey VARCHAR(255) NOT NULL,
+                privkey VARCHAR(255) NOT NULL,
+                keypair_id VARCHAR(255) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                description TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
         await session.commit()
         logger.info("Database tables verified")
 
