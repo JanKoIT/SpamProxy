@@ -53,11 +53,11 @@ export default function DkimPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/dkim");
-      if (!res.ok) throw new Error("Fehler beim Laden der DKIM-Keys");
+      if (!res.ok) throw new Error("Error loading DKIM keys");
       const data: DkimKey[] = await res.json();
       setKeys(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -91,13 +91,13 @@ export default function DkimPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Fehler beim Generieren des DKIM-Keys");
+        throw new Error(data.error || "Error generating DKIM key");
       }
       const data: GenerateResult = await res.json();
       setGeneratedResult(data);
       await loadKeys();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setGenerating(false);
     }
@@ -106,11 +106,11 @@ export default function DkimPage() {
   async function handleDelete(id: string) {
     try {
       const res = await fetch(`/api/dkim/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Fehler beim Loeschen des DKIM-Keys");
+      if (!res.ok) throw new Error("Error deleting DKIM key");
       setDeleteConfirm(null);
       await loadKeys();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     }
   }
 
@@ -118,10 +118,10 @@ export default function DkimPage() {
     setTogglingId(id);
     try {
       const res = await fetch(`/api/dkim/${id}`, { method: "PUT" });
-      if (!res.ok) throw new Error("Fehler beim Umschalten des DKIM-Keys");
+      if (!res.ok) throw new Error("Error toggling DKIM key");
       await loadKeys();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setTogglingId(null);
     }
@@ -142,7 +142,7 @@ export default function DkimPage() {
           <div>
             <h1 className="text-2xl font-bold text-white">DKIM Keys</h1>
             <p className="text-sm text-slate-400">
-              DKIM-Signierung fuer ausgehende E-Mails verwalten
+              Manage DKIM signing for outgoing emails
             </p>
           </div>
         </div>
@@ -152,7 +152,7 @@ export default function DkimPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
-          Key generieren
+          Generate Key
         </button>
       </div>
 
@@ -160,10 +160,10 @@ export default function DkimPage() {
       <div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3">
         <Info className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />
         <div className="text-sm text-blue-300">
-          <p className="font-medium">DNS-Konfiguration erforderlich</p>
+          <p className="font-medium">DNS configuration required</p>
           <p className="mt-1 text-blue-300/80">
-            Nach dem Generieren eines DKIM-Keys muss der angezeigte DNS-TXT-Record beim
-            Domain-Provider eingetragen werden, damit DKIM-Signierung funktioniert.
+            After generating a DKIM key, the displayed DNS TXT record must be added at your
+            domain provider for DKIM signing to work.
           </p>
         </div>
       </div>
@@ -184,8 +184,8 @@ export default function DkimPage() {
               <th className="px-4 py-3 font-medium">Selector</th>
               <th className="px-4 py-3 font-medium">Key Bits</th>
               <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Erstellt</th>
-              <th className="px-4 py-3 font-medium text-right">Aktionen</th>
+              <th className="px-4 py-3 font-medium">Created</th>
+              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
@@ -199,7 +199,7 @@ export default function DkimPage() {
             {!loading && keys.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
-                  Noch keine DKIM-Keys konfiguriert. Klicken Sie auf &quot;Key generieren&quot;.
+                  No DKIM keys configured. Click &quot;Generate Key&quot; to get started.
                 </td>
               </tr>
             )}
@@ -214,7 +214,7 @@ export default function DkimPage() {
                       type="button"
                       onClick={() => setExpandedRow(expandedRow === k.id ? null : k.id)}
                       className="text-slate-400 hover:text-white transition-colors"
-                      title="DNS-Record anzeigen"
+                      title="Show DNS record"
                     >
                       {expandedRow === k.id ? (
                         <ChevronDown className="h-4 w-4" />
@@ -239,7 +239,7 @@ export default function DkimPage() {
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                         k.is_active ? "bg-blue-600" : "bg-slate-700"
                       } ${togglingId === k.id ? "opacity-50" : ""}`}
-                      title={k.is_active ? "Deaktivieren" : "Aktivieren"}
+                      title={k.is_active ? "Disable" : "Enable"}
                     >
                       <span
                         className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
@@ -249,7 +249,7 @@ export default function DkimPage() {
                     </button>
                   </td>
                   <td className="px-4 py-3 text-slate-400">
-                    {new Date(k.created_at).toLocaleDateString("de-DE")}
+                    {new Date(k.created_at).toLocaleDateString("en-US")}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {deleteConfirm === k.id ? (
@@ -258,7 +258,7 @@ export default function DkimPage() {
                           type="button"
                           onClick={() => handleDelete(k.id)}
                           className="rounded-md p-1.5 text-red-400 hover:bg-red-500/20 transition-colors"
-                          title="Loeschen bestaetigen"
+                          title="Confirm delete"
                         >
                           <Check className="h-4 w-4" />
                         </button>
@@ -266,7 +266,7 @@ export default function DkimPage() {
                           type="button"
                           onClick={() => setDeleteConfirm(null)}
                           className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 transition-colors"
-                          title="Abbrechen"
+                          title="Cancel"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -276,7 +276,7 @@ export default function DkimPage() {
                         type="button"
                         onClick={() => setDeleteConfirm(k.id)}
                         className="rounded-md p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
-                        title="Loeschen"
+                        title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -305,7 +305,7 @@ export default function DkimPage() {
                                 )
                               }
                               className="rounded-md p-1.5 text-slate-400 hover:text-white transition-colors"
-                              title="Kopieren"
+                              title="Copy"
                             >
                               {copiedField === `name-${k.id}` ? (
                                 <Check className="h-4 w-4 text-green-400" />
@@ -322,7 +322,7 @@ export default function DkimPage() {
                           </div>
                           <div className="flex items-start justify-between rounded-md border border-slate-700 bg-slate-800 px-3 py-2">
                             <div className="min-w-0 flex-1 mr-2">
-                              <span className="text-xs text-slate-500">DNS Wert</span>
+                              <span className="text-xs text-slate-500">DNS Value</span>
                               <p className="font-mono text-xs text-white break-all">
                                 {k.dns_record}
                               </p>
@@ -333,7 +333,7 @@ export default function DkimPage() {
                                 copyToClipboard(k.dns_record, `value-${k.id}`)
                               }
                               className="rounded-md p-1.5 text-slate-400 hover:text-white transition-colors shrink-0 mt-2"
-                              title="Kopieren"
+                              title="Copy"
                             >
                               {copiedField === `value-${k.id}` ? (
                                 <Check className="h-4 w-4 text-green-400" />
@@ -359,12 +359,12 @@ export default function DkimPage() {
           <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">
-                {generatedResult ? "DKIM-Key generiert" : "DKIM-Key generieren"}
+                {generatedResult ? "DKIM Key Generated" : "Generate DKIM Key"}
               </h2>
               <button
                 type="button"
                 onClick={() => setShowDialog(false)}
-                title="Schliessen"
+                title="Close"
                 className="rounded-md p-1 text-slate-400 hover:text-white"
               >
                 <X className="h-5 w-5" />
@@ -398,7 +398,7 @@ export default function DkimPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-300">
-                      Key-Groesse
+                      Key Size
                     </label>
                     <select
                       value={formKeySize}
@@ -417,7 +417,7 @@ export default function DkimPage() {
                     onClick={() => setShowDialog(false)}
                     className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-800"
                   >
-                    Abbrechen
+                    Cancel
                   </button>
                   <button
                     type="button"
@@ -426,7 +426,7 @@ export default function DkimPage() {
                     className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                   >
                     {generating && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Generieren
+                    Generate
                   </button>
                 </div>
               </>
@@ -434,7 +434,7 @@ export default function DkimPage() {
               <>
                 <div className="space-y-4">
                   <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-400">
-                    DKIM-Key erfolgreich generiert. Bitte den folgenden DNS-Record eintragen:
+                    DKIM key generated successfully. Please add the following DNS record:
                   </div>
 
                   <div className="space-y-2">
@@ -454,7 +454,7 @@ export default function DkimPage() {
                           )
                         }
                         className="rounded-md p-1.5 text-slate-400 hover:text-white transition-colors"
-                        title="Kopieren"
+                        title="Copy"
                       >
                         {copiedField === "gen-name" ? (
                           <Check className="h-4 w-4 text-green-400" />
@@ -473,7 +473,7 @@ export default function DkimPage() {
 
                     <div className="flex items-start justify-between rounded-md border border-slate-700 bg-slate-800 px-3 py-2">
                       <div className="min-w-0 flex-1 mr-2">
-                        <span className="text-xs text-slate-500">DNS Wert</span>
+                        <span className="text-xs text-slate-500">DNS Value</span>
                         <p className="font-mono text-xs text-white break-all">
                           {generatedResult.dns_record}
                         </p>
@@ -484,7 +484,7 @@ export default function DkimPage() {
                           copyToClipboard(generatedResult.dns_record, "gen-value")
                         }
                         className="rounded-md p-1.5 text-slate-400 hover:text-white transition-colors shrink-0 mt-2"
-                        title="Kopieren"
+                        title="Copy"
                       >
                         {copiedField === "gen-value" ? (
                           <Check className="h-4 w-4 text-green-400" />
@@ -502,7 +502,7 @@ export default function DkimPage() {
                     onClick={() => setShowDialog(false)}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                   >
-                    Schliessen
+                    Close
                   </button>
                 </div>
               </>

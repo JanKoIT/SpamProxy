@@ -22,9 +22,9 @@ interface ScoringRule {
 }
 
 const ruleTypeOptions = [
-  { value: "tld", label: "TLD-Endung" },
+  { value: "tld", label: "TLD Suffix" },
   { value: "domain", label: "Domain" },
-  { value: "sender_domain", label: "Absender-Domain" },
+  { value: "sender_domain", label: "Sender Domain" },
 ];
 
 const ruleTypePlaceholders: Record<string, string> = {
@@ -61,7 +61,7 @@ export default function ScoringPage() {
     setError(null);
     try {
       const res = await fetch("/api/scoring-rules");
-      if (!res.ok) throw new Error("Fehler beim Laden der Regeln");
+      if (!res.ok) throw new Error("Error loading rules");
       const data = await res.json();
       const arr: ScoringRule[] = Array.isArray(data) ? data : [];
       // Sort by rule_type then score_adjustment desc
@@ -71,7 +71,7 @@ export default function ScoringPage() {
       });
       setRules(arr);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -116,7 +116,7 @@ export default function ScoringPage() {
             description: formDescription.trim(),
           }),
         });
-        if (!res.ok) throw new Error("Fehler beim Speichern");
+        if (!res.ok) throw new Error("Error saving");
       } else {
         // Create
         const res = await fetch("/api/scoring-rules", {
@@ -129,13 +129,13 @@ export default function ScoringPage() {
             description: formDescription.trim(),
           }),
         });
-        if (!res.ok) throw new Error("Fehler beim Hinzufuegen");
+        if (!res.ok) throw new Error("Error adding");
       }
       setShowDialog(false);
       setEditingRule(null);
       await loadRules();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setSaving(false);
     }
@@ -150,12 +150,12 @@ export default function ScoringPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toggle: true }),
       });
-      if (!res.ok) throw new Error("Fehler beim Umschalten");
+      if (!res.ok) throw new Error("Error toggling");
       setRules((prev) =>
         prev.map((r) => (r.id === id ? { ...r, is_active: !r.is_active } : r))
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setTogglingId(null);
     }
@@ -166,11 +166,11 @@ export default function ScoringPage() {
     setError(null);
     try {
       const res = await fetch(`/api/scoring-rules/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Fehler beim Loeschen");
+      if (!res.ok) throw new Error("Error deleting");
       setRules((prev) => prev.filter((r) => r.id !== id));
       setConfirmDeleteId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setDeletingId(null);
     }
@@ -188,9 +188,9 @@ export default function ScoringPage() {
       <div className="flex items-center gap-3">
         <TrendingUp className="h-6 w-6 text-blue-400" />
         <div>
-          <h1 className="text-2xl font-bold text-white">Score-Anpassungen</h1>
+          <h1 className="text-2xl font-bold text-white">Score Adjustments</h1>
           <p className="text-sm text-slate-400">
-            TLD- und Domain-basierte Score-Anpassungen fuer Spam-Erkennung
+            TLD and domain-based score adjustments for spam detection
           </p>
         </div>
       </div>
@@ -204,8 +204,8 @@ export default function ScoringPage() {
       {/* Info box */}
       <div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-400">
         <Info className="h-4 w-4 mt-0.5 shrink-0" />
-        Positive Werte erhoehen den Spam-Score (mehr Spam-Verdacht), negative Werte verringern ihn
-        (vertrauenswuerdiger). Basis-Score wird von rspamd berechnet.
+        Positive values increase the spam score (more spam suspicion), negative values decrease it
+        (more trusted). Base score is calculated by rspamd.
       </div>
 
       {/* Add button */}
@@ -215,7 +215,7 @@ export default function ScoringPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
-          Regel hinzufuegen
+          Add Rule
         </button>
       </div>
 
@@ -226,19 +226,19 @@ export default function ScoringPage() {
         </div>
       ) : rules.length === 0 ? (
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-12 text-center text-sm text-slate-500">
-          Keine Regeln vorhanden
+          No rules configured
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-800">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/50">
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Aktiv</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Typ</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Active</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Type</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-400">Pattern</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-400">Score</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Beschreibung</th>
-                <th className="px-4 py-3 text-right font-medium text-slate-400">Aktionen</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Description</th>
+                <th className="px-4 py-3 text-right font-medium text-slate-400">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -281,7 +281,7 @@ export default function ScoringPage() {
                     <td className="px-4 py-3 text-right">
                       {confirmDeleteId === rule.id ? (
                         <div className="inline-flex items-center gap-2">
-                          <span className="text-xs text-slate-400">Wirklich loeschen?</span>
+                          <span className="text-xs text-slate-400">Confirm delete?</span>
                           <button
                             onClick={() => handleDelete(rule.id)}
                             disabled={deletingId === rule.id}
@@ -290,14 +290,14 @@ export default function ScoringPage() {
                             {deletingId === rule.id ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
-                              "Ja"
+                              "Yes"
                             )}
                           </button>
                           <button
                             onClick={() => setConfirmDeleteId(null)}
                             className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-600"
                           >
-                            Nein
+                            No
                           </button>
                         </div>
                       ) : (
@@ -305,14 +305,14 @@ export default function ScoringPage() {
                           <button
                             onClick={() => openEditDialog(rule)}
                             className="rounded p-1.5 text-slate-500 hover:bg-blue-500/10 hover:text-blue-400 transition-colors"
-                            title="Bearbeiten"
+                            title="Edit"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => setConfirmDeleteId(rule.id)}
                             className="rounded p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                            title="Loeschen"
+                            title="Delete"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -333,7 +333,7 @@ export default function ScoringPage() {
           <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">
-                {editingRule ? "Regel bearbeiten" : "Regel hinzufuegen"}
+                {editingRule ? "Edit Rule" : "Add Rule"}
               </h2>
               <button
                 onClick={() => {
@@ -349,7 +349,7 @@ export default function ScoringPage() {
             <div className="space-y-4">
               {/* Rule Type */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Typ</label>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Type</label>
                 <select
                   value={formRuleType}
                   onChange={(e) => setFormRuleType(e.target.value)}
@@ -378,7 +378,7 @@ export default function ScoringPage() {
               {/* Score Adjustment */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Score-Anpassung
+                  Score Adjustment
                 </label>
                 <input
                   type="number"
@@ -388,20 +388,20 @@ export default function ScoringPage() {
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white font-mono placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Positiv = mehr Spam-Verdacht, Negativ = vertrauenswuerdiger
+                  Positive = more spam suspicion, Negative = more trusted
                 </p>
               </div>
 
               {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Beschreibung <span className="text-slate-500">(optional)</span>
+                  Description <span className="text-slate-500">(optional)</span>
                 </label>
                 <input
                   type="text"
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Optionale Beschreibung"
+                  placeholder="Optional description"
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -415,7 +415,7 @@ export default function ScoringPage() {
                 }}
                 className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 transition-colors"
               >
-                Abbrechen
+                Cancel
               </button>
               <button
                 onClick={handleSave}
@@ -423,7 +423,7 @@ export default function ScoringPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {editingRule ? "Speichern" : "Hinzufuegen"}
+                {editingRule ? "Save" : "Add"}
               </button>
             </div>
           </div>

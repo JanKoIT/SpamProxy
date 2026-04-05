@@ -57,7 +57,7 @@ function ToggleCard({
           className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
             value ? "bg-blue-600" : "bg-slate-700"
           } ${loading ? "opacity-50" : ""}`}
-          title={value ? "Deaktivieren" : "Aktivieren"}
+          title={value ? "Disable" : "Enable"}
         >
           <span
             className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
@@ -127,7 +127,7 @@ function InputCard({
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                "Speichern"
+                "Save"
               )}
             </button>
           </div>
@@ -147,7 +147,7 @@ export default function SecurityPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Fehler beim Laden der Einstellungen");
+      if (!res.ok) throw new Error("Error loading settings");
       const data: SettingValue[] = await res.json();
       const map: Record<string, unknown> = {};
       for (const s of data) {
@@ -155,7 +155,7 @@ export default function SecurityPage() {
       }
       setSettings(map);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -174,10 +174,10 @@ export default function SecurityPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: newValue }),
       });
-      if (!res.ok) throw new Error("Fehler beim Speichern");
+      if (!res.ok) throw new Error("Error saving");
       setSettings((prev) => ({ ...prev, [key]: newValue }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setSavingKey(null);
     }
@@ -192,10 +192,10 @@ export default function SecurityPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: newValue }),
       });
-      if (!res.ok) throw new Error("Fehler beim Speichern");
+      if (!res.ok) throw new Error("Error saving");
       setSettings((prev) => ({ ...prev, [key]: newValue }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setSavingKey(null);
     }
@@ -222,7 +222,7 @@ export default function SecurityPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Security &amp; Scanning</h1>
           <p className="text-sm text-slate-400">
-            Sicherheits- und Scanning-Optionen konfigurieren
+            Configure security and scanning options
           </p>
         </div>
       </div>
@@ -238,7 +238,7 @@ export default function SecurityPage() {
         <ToggleCard
           icon={<Shield className="h-5 w-5 text-red-400" />}
           title="Virus-Scanning (ClamAV)"
-          description="Scannt E-Mails auf Viren und Malware via ClamAV"
+          description="Scans emails for viruses and malware via ClamAV"
           settingKey="antivirus_enabled"
           value={boolVal("antivirus_enabled")}
           loading={savingKey === "antivirus_enabled"}
@@ -249,7 +249,7 @@ export default function SecurityPage() {
         <ToggleCard
           icon={<Globe className="h-5 w-5 text-yellow-400" />}
           title="DNS Blocklists (RBL/DNSBL)"
-          description="Prueft Absender-IPs gegen DNS-Blocklists wie Spamhaus, Barracuda, SpamCop"
+          description="Checks sender IPs against DNS blocklists like Spamhaus, Barracuda, SpamCop"
           settingKey="rbl_enabled"
           value={boolVal("rbl_enabled")}
           loading={savingKey === "rbl_enabled"}
@@ -259,8 +259,8 @@ export default function SecurityPage() {
         {/* SPF Verification */}
         <ToggleCard
           icon={<Shield className="h-5 w-5 text-green-400" />}
-          title="SPF-Verifizierung"
-          description="Prueft SPF-Records der Absenderdomain"
+          title="SPF Verification"
+          description="Checks SPF records of the sender domain"
           settingKey="spf_enabled"
           value={boolVal("spf_enabled")}
           loading={savingKey === "spf_enabled"}
@@ -271,19 +271,19 @@ export default function SecurityPage() {
         <InputCard
           icon={<Shield className="h-5 w-5 text-orange-400" />}
           title="Spamhaus DQS"
-          description="Spamhaus Data Query Service fuer erweiterte Blocklist-Abfragen"
+          description="Spamhaus Data Query Service for extended blocklist queries"
           settingKey="spamhaus_dqs_key"
           value={String(settings["spamhaus_dqs_key"] ?? "")}
           loading={savingKey === "spamhaus_dqs_key"}
           onSave={handleSaveInput}
-          placeholder="DQS API-Key eingeben"
+          placeholder="Enter DQS API key"
         />
 
         {/* AI Spam Classification */}
         <ToggleCard
           icon={<Brain className="h-5 w-5 text-purple-400" />}
-          title="AI Spam-Klassifizierung"
-          description="KI-basierte Spam-Erkennung fuer Grey-Zone-Mails"
+          title="AI Spam Classification"
+          description="AI-based spam detection for grey-zone emails"
           settingKey="ai_enabled"
           value={boolVal("ai_enabled")}
           loading={savingKey === "ai_enabled"}
@@ -315,8 +315,8 @@ export default function SecurityPage() {
         {/* DKIM Signing */}
         <ToggleCard
           icon={<Key className="h-5 w-5 text-blue-400" />}
-          title="DKIM-Signierung"
-          description="DKIM-Signierung fuer ausgehende E-Mails"
+          title="DKIM Signing"
+          description="DKIM signing for outgoing emails"
           settingKey="dkim_signing_enabled"
           value={boolVal("dkim_signing_enabled")}
           loading={savingKey === "dkim_signing_enabled"}
@@ -326,7 +326,7 @@ export default function SecurityPage() {
               href="/settings/dkim"
               className="mt-2 inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300 transition-colors"
             >
-              DKIM-Keys verwalten
+              Manage DKIM keys
               <ExternalLink className="h-3.5 w-3.5" />
             </Link>
           }

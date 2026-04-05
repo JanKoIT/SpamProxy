@@ -22,9 +22,9 @@ interface AccessListEntry {
 
 const entryTypeOptions = [
   { value: "domain", label: "Domain" },
-  { value: "email", label: "E-Mail" },
-  { value: "ip", label: "IP-Adresse" },
-  { value: "cidr", label: "CIDR-Netzwerk" },
+  { value: "email", label: "Email" },
+  { value: "ip", label: "IP Address" },
+  { value: "cidr", label: "CIDR Network" },
 ];
 
 const entryTypePlaceholders: Record<string, string> = {
@@ -62,11 +62,11 @@ export default function AccessListsPage() {
     setError(null);
     try {
       const res = await fetch(`/api/access-lists?list_type=${activeTab}`);
-      if (!res.ok) throw new Error("Fehler beim Laden der Eintraege");
+      if (!res.ok) throw new Error("Error loading entries");
       const data = await res.json();
       setEntries(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -91,14 +91,14 @@ export default function AccessListsPage() {
           description: formDescription.trim(),
         }),
       });
-      if (!res.ok) throw new Error("Fehler beim Hinzufuegen");
+      if (!res.ok) throw new Error("Error adding");
       setShowDialog(false);
       setFormEntryType("domain");
       setFormValue("");
       setFormDescription("");
       await loadEntries();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setSaving(false);
     }
@@ -109,12 +109,12 @@ export default function AccessListsPage() {
     setError(null);
     try {
       const res = await fetch(`/api/access-lists/${id}`, { method: "PUT" });
-      if (!res.ok) throw new Error("Fehler beim Umschalten");
+      if (!res.ok) throw new Error("Error toggling");
       setEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, is_active: !e.is_active } : e))
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setTogglingId(null);
     }
@@ -125,11 +125,11 @@ export default function AccessListsPage() {
     setError(null);
     try {
       const res = await fetch(`/api/access-lists/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Fehler beim Loeschen");
+      if (!res.ok) throw new Error("Error deleting");
       setEntries((prev) => prev.filter((e) => e.id !== id));
       setConfirmDeleteId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setDeletingId(null);
     }
@@ -143,7 +143,7 @@ export default function AccessListsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Whitelist &amp; Blacklist</h1>
           <p className="text-sm text-slate-400">
-            Domains, E-Mail-Adressen und IPs erlauben oder blockieren
+            Allow or block domains, email addresses and IPs
           </p>
         </div>
       </div>
@@ -182,7 +182,7 @@ export default function AccessListsPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
-          Eintrag hinzufuegen
+          Add Entry
         </button>
       </div>
 
@@ -196,8 +196,8 @@ export default function AccessListsPage() {
       >
         <Info className="h-4 w-4 mt-0.5 shrink-0" />
         {activeTab === "whitelist"
-          ? "Eintraege auf der Whitelist umgehen den Spam-Filter und werden immer zugestellt."
-          : "Eintraege auf der Blacklist werden immer abgelehnt."}
+          ? "Whitelist entries bypass the spam filter and are always delivered."
+          : "Blacklist entries are always rejected."}
       </div>
 
       {/* Table */}
@@ -207,18 +207,18 @@ export default function AccessListsPage() {
         </div>
       ) : entries.length === 0 ? (
         <div className="rounded-lg border border-slate-800 bg-slate-900 p-12 text-center text-sm text-slate-500">
-          Keine Eintraege vorhanden
+          No entries found
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-800">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/50">
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Aktiv</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Typ</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Wert</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-400">Beschreibung</th>
-                <th className="px-4 py-3 text-right font-medium text-slate-400">Aktionen</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Active</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Type</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Value</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-400">Description</th>
+                <th className="px-4 py-3 text-right font-medium text-slate-400">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -256,7 +256,7 @@ export default function AccessListsPage() {
                   <td className="px-4 py-3 text-right">
                     {confirmDeleteId === entry.id ? (
                       <div className="inline-flex items-center gap-2">
-                        <span className="text-xs text-slate-400">Wirklich loeschen?</span>
+                        <span className="text-xs text-slate-400">Confirm delete?</span>
                         <button
                           onClick={() => handleDelete(entry.id)}
                           disabled={deletingId === entry.id}
@@ -265,21 +265,21 @@ export default function AccessListsPage() {
                           {deletingId === entry.id ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
-                            "Ja"
+                            "Yes"
                           )}
                         </button>
                         <button
                           onClick={() => setConfirmDeleteId(null)}
                           className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-600"
                         >
-                          Nein
+                          No
                         </button>
                       </div>
                     ) : (
                       <button
                         onClick={() => setConfirmDeleteId(entry.id)}
                         className="rounded p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                        title="Loeschen"
+                        title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -297,7 +297,7 @@ export default function AccessListsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">Eintrag hinzufuegen</h2>
+              <h2 className="text-lg font-semibold text-white">Add Entry</h2>
               <button
                 onClick={() => setShowDialog(false)}
                 className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
@@ -309,7 +309,7 @@ export default function AccessListsPage() {
             <div className="space-y-4">
               {/* List Type (read-only, from active tab) */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Liste</label>
+                <label className="block text-sm font-medium text-slate-300 mb-1">List</label>
                 <div
                   className={`rounded-md border px-3 py-2 text-sm ${
                     activeTab === "whitelist"
@@ -323,7 +323,7 @@ export default function AccessListsPage() {
 
               {/* Entry Type */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Typ</label>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Type</label>
                 <select
                   value={formEntryType}
                   onChange={(e) => setFormEntryType(e.target.value)}
@@ -339,7 +339,7 @@ export default function AccessListsPage() {
 
               {/* Value */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Wert</label>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Value</label>
                 <input
                   type="text"
                   value={formValue}
@@ -352,13 +352,13 @@ export default function AccessListsPage() {
               {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Beschreibung <span className="text-slate-500">(optional)</span>
+                  Description <span className="text-slate-500">(optional)</span>
                 </label>
                 <input
                   type="text"
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Optionale Beschreibung"
+                  placeholder="Optional description"
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -369,7 +369,7 @@ export default function AccessListsPage() {
                 onClick={() => setShowDialog(false)}
                 className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 transition-colors"
               >
-                Abbrechen
+                Cancel
               </button>
               <button
                 onClick={handleAdd}
@@ -377,7 +377,7 @@ export default function AccessListsPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                Hinzufuegen
+                Add
               </button>
             </div>
           </div>

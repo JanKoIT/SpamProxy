@@ -51,10 +51,10 @@ export default function BlocklistsPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/rbl");
-      if (!res.ok) throw new Error("Fehler beim Laden");
+      if (!res.ok) throw new Error("Error loading");
       setLists(await res.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -101,20 +101,20 @@ export default function BlocklistsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error("Fehler beim Aktualisieren");
+        if (!res.ok) throw new Error("Error updating");
       } else {
         const res = await fetch("/api/rbl", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error("Fehler beim Erstellen");
+        if (!res.ok) throw new Error("Error creating");
       }
 
       setShowDialog(false);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setSaving(false);
     }
@@ -128,14 +128,14 @@ export default function BlocklistsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toggle: true }),
       });
-      if (!res.ok) throw new Error("Fehler beim Umschalten");
+      if (!res.ok) throw new Error("Error toggling");
       setLists((prev) =>
         prev.map((r) =>
           r.id === id ? { ...r, is_active: !r.is_active } : r
         )
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setTogglingId(null);
     }
@@ -144,18 +144,18 @@ export default function BlocklistsPage() {
   async function handleDelete(id: string) {
     try {
       const res = await fetch(`/api/rbl/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Fehler beim L\u00f6schen");
+      if (!res.ok) throw new Error("Error deleting");
       setDeleteConfirm(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+      setError(e instanceof Error ? e.message : "Unknown error");
     }
   }
 
   const typeLabels: Record<string, string> = {
-    ip: "IP-basiert",
-    domain: "Domain-basiert",
-    url: "URL-basiert",
+    ip: "IP-based",
+    domain: "Domain-based",
+    url: "URL-based",
   };
 
   const typeColors: Record<string, string> = {
@@ -172,7 +172,7 @@ export default function BlocklistsPage() {
           <div>
             <h1 className="text-2xl font-bold text-white">DNS Blocklists</h1>
             <p className="text-sm text-slate-400">
-              RBL/DNSBL-Listen f&uuml;r Spam-Erkennung verwalten
+              Manage RBL/DNSBL lists for spam detection
             </p>
           </div>
         </div>
@@ -182,14 +182,14 @@ export default function BlocklistsPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
-          Blocklist hinzuf&uuml;gen
+          Add Blocklist
         </button>
       </div>
 
       <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
-        <strong>Hinweis:</strong> Aktive Blocklists werden von rspamd bei jeder
-        eingehenden Mail abgefragt. Der Score wird erh&ouml;ht wenn die
-        Absender-IP oder -Domain auf einer Blocklist steht.
+        <strong>Note:</strong> Active blocklists are queried by rspamd for every
+        incoming email. The score is increased when the sender IP or domain
+        is found on a blocklist.
       </div>
 
       {error && (
@@ -202,10 +202,10 @@ export default function BlocklistsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-800 text-left text-slate-400">
-              <th className="px-4 py-3 font-medium">Aktiv</th>
+              <th className="px-4 py-3 font-medium">Active</th>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Host</th>
-              <th className="px-4 py-3 font-medium">Typ</th>
+              <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
@@ -220,7 +220,7 @@ export default function BlocklistsPage() {
             {!loading && lists.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
-                  Keine Blocklists konfiguriert.
+                  No blocklists configured.
                 </td>
               </tr>
             )}
@@ -271,7 +271,7 @@ export default function BlocklistsPage() {
                       type="button"
                       onClick={() => openEdit(r)}
                       className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-                      title="Bearbeiten"
+                      title="Edit"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -281,7 +281,7 @@ export default function BlocklistsPage() {
                           type="button"
                           onClick={() => handleDelete(r.id)}
                           className="rounded-md p-1.5 text-red-400 hover:bg-red-500/20 transition-colors"
-                          title="Best\u00e4tigen"
+                          title="Confirm"
                         >
                           <Check className="h-4 w-4" />
                         </button>
@@ -289,7 +289,7 @@ export default function BlocklistsPage() {
                           type="button"
                           onClick={() => setDeleteConfirm(null)}
                           className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 transition-colors"
-                          title="Abbrechen"
+                          title="Cancel"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -299,7 +299,7 @@ export default function BlocklistsPage() {
                         type="button"
                         onClick={() => setDeleteConfirm(r.id)}
                         className="rounded-md p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
-                        title="L\u00f6schen"
+                        title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -318,7 +318,7 @@ export default function BlocklistsPage() {
           <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">
-                {editId ? "Blocklist bearbeiten" : "Neue Blocklist"}
+                {editId ? "Edit Blocklist" : "New Blocklist"}
               </h2>
               <button
                 type="button"
@@ -337,7 +337,7 @@ export default function BlocklistsPage() {
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="z.B. Spamhaus ZEN"
+                  placeholder="e.g. Spamhaus ZEN"
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -348,27 +348,27 @@ export default function BlocklistsPage() {
                 <input
                   value={form.rbl_host}
                   onChange={(e) => setForm({ ...form, rbl_host: e.target.value })}
-                  placeholder="z.B. zen.spamhaus.org"
+                  placeholder="e.g. zen.spamhaus.org"
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300">
-                  Typ
+                  Type
                 </label>
                 <select
                   value={form.list_type}
                   onChange={(e) => setForm({ ...form, list_type: e.target.value })}
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="ip">IP-basiert</option>
-                  <option value="domain">Domain-basiert</option>
-                  <option value="url">URL-basiert</option>
+                  <option value="ip">IP-based</option>
+                  <option value="domain">Domain-based</option>
+                  <option value="url">URL-based</option>
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300">
-                  Beschreibung
+                  Description
                 </label>
                 <input
                   value={form.description}
@@ -385,7 +385,7 @@ export default function BlocklistsPage() {
                 onClick={() => setShowDialog(false)}
                 className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-800"
               >
-                Abbrechen
+                Cancel
               </button>
               <button
                 type="button"
@@ -394,7 +394,7 @@ export default function BlocklistsPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {editId ? "Speichern" : "Erstellen"}
+                {editId ? "Save" : "Create"}
               </button>
             </div>
           </div>

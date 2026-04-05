@@ -165,7 +165,7 @@ export default function FederationPage() {
   };
 
   const directionLabel = (d: string) =>
-    d === "push" ? "Push" : d === "pull" ? "Pull" : "Beides";
+    d === "push" ? "Push" : d === "pull" ? "Pull" : "Both";
   const directionColor = (d: string) =>
     d === "push"
       ? "bg-blue-500/20 text-blue-400"
@@ -183,7 +183,7 @@ export default function FederationPage() {
             <h1 className="text-2xl font-bold text-white">Federation</h1>
           </div>
           <p className="mt-1 text-sm text-slate-400">
-            rspamd-Server verbinden und Wissen teilen
+            Connect rspamd servers and share knowledge
           </p>
         </div>
         <button
@@ -191,16 +191,15 @@ export default function FederationPage() {
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Peer hinzufuegen
+          Add Peer
         </button>
       </div>
 
       {/* Info Banner */}
       <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-slate-300">
-        Federation ermoeglicht es, Spam/Ham-Wissen zwischen mehreren SpamProxy-
-        oder rspamd-Instanzen zu teilen. Wenn eine E-Mail als Spam oder Ham
-        gelernt wird, wird dieses Wissen automatisch an alle aktiven Peers
-        weitergegeben.
+        Federation allows sharing spam/ham knowledge between multiple SpamProxy
+        or rspamd instances. When an email is learned as spam or ham,
+        this knowledge is automatically propagated to all active peers.
       </div>
 
       {/* Info Cards */}
@@ -213,8 +212,8 @@ export default function FederationPage() {
             <h3 className="font-semibold text-white">Bayes Learning</h3>
           </div>
           <p className="text-sm text-slate-400">
-            Spam/Ham-Entscheidungen werden an Peers weitergeleitet, sodass alle
-            Server vom gleichen Training profitieren
+            Spam/ham decisions are forwarded to peers so that all
+            servers benefit from the same training
           </p>
         </div>
 
@@ -226,8 +225,8 @@ export default function FederationPage() {
             <h3 className="font-semibold text-white">Fuzzy Hashes</h3>
           </div>
           <p className="text-sm text-slate-400">
-            Spam-Fingerabdruecke werden geteilt, damit bekannte Spam-Muster
-            sofort auf allen Servern erkannt werden
+            Spam fingerprints are shared so that known spam patterns
+            are immediately recognized on all servers
           </p>
         </div>
 
@@ -236,11 +235,11 @@ export default function FederationPage() {
             <div className="rounded-lg bg-green-500/20 p-2">
               <ArrowLeftRight className="h-5 w-5 text-green-400" />
             </div>
-            <h3 className="font-semibold text-white">Richtung</h3>
+            <h3 className="font-semibold text-white">Direction</h3>
           </div>
           <p className="text-sm text-slate-400">
-            Push: Eigenes Wissen senden. Pull: Von Peers lernen. Both:
-            Bidirektionaler Austausch
+            Push: Send own knowledge. Pull: Learn from peers. Both:
+            Bidirectional exchange
           </p>
         </div>
       </div>
@@ -254,8 +253,8 @@ export default function FederationPage() {
         <div className="rounded-lg border border-slate-700/50 bg-slate-800 p-8 text-center">
           <Network className="mx-auto h-10 w-10 text-slate-600 mb-3" />
           <p className="text-slate-400">
-            Noch keine Peers konfiguriert. Klicke auf &quot;Peer
-            hinzufuegen&quot; um loszulegen.
+            No peers configured. Click &quot;Add
+            Peer&quot; to get started.
           </p>
         </div>
       ) : (
@@ -315,7 +314,7 @@ export default function FederationPage() {
                   Syncs: {peer.total_synced}
                 </span>
                 <span>
-                  Letzter Sync: {peer.last_sync ?? "nie"}
+                  Last Sync: {peer.last_sync ?? "never"}
                 </span>
               </div>
 
@@ -339,7 +338,7 @@ export default function FederationPage() {
                   ) : (
                     <Zap className="h-4 w-4" />
                   )}
-                  Verbindung testen
+                  Test Connection
                 </button>
                 <button
                   onClick={() => openEdit(peer)}
@@ -361,7 +360,7 @@ export default function FederationPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <CheckCircle className="h-4 w-4 text-green-400" />
                     <span className="text-sm font-medium text-green-400">
-                      Verbindung erfolgreich
+                      Connection successful
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-sm text-slate-300 md:grid-cols-4">
@@ -378,7 +377,7 @@ export default function FederationPage() {
                       {testResults[peer.id]!.learned}
                     </div>
                     <div>
-                      <span className="text-slate-500">Antwortzeit:</span>{" "}
+                      <span className="text-slate-500">Response time:</span>{" "}
                       {testResults[peer.id]!.response_time}
                     </div>
                   </div>
@@ -395,7 +394,7 @@ export default function FederationPage() {
           <div className="w-full max-w-lg rounded-lg border border-slate-700/50 bg-slate-900 p-6 shadow-xl">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-semibold text-white">
-                {editingId ? "Peer bearbeiten" : "Peer hinzufuegen"}
+                {editingId ? "Edit Peer" : "Add Peer"}
               </h2>
               <button
                 onClick={() => setDialogOpen(false)}
@@ -436,7 +435,7 @@ export default function FederationPage() {
               {/* Password */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Passwort{" "}
+                  Password{" "}
                   <span className="text-slate-500 font-normal">(optional)</span>
                 </label>
                 <div className="relative">
@@ -465,7 +464,7 @@ export default function FederationPage() {
               {/* Sync Options */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Sync-Optionen
+                  Sync Options
                 </label>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
@@ -496,7 +495,7 @@ export default function FederationPage() {
               {/* Direction */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Richtung
+                  Direction
                 </label>
                 <div className="flex items-center gap-4">
                   {(["push", "pull", "both"] as const).map((d) => (
@@ -512,7 +511,7 @@ export default function FederationPage() {
                         onChange={() => setForm({ ...form, direction: d })}
                         className="h-4 w-4 border-slate-600 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
                       />
-                      {d === "push" ? "Push" : d === "pull" ? "Pull" : "Beides"}
+                      {d === "push" ? "Push" : d === "pull" ? "Pull" : "Both"}
                     </label>
                   ))}
                 </div>
@@ -525,7 +524,7 @@ export default function FederationPage() {
                 onClick={() => setDialogOpen(false)}
                 className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 transition-colors"
               >
-                Abbrechen
+                Cancel
               </button>
               <button
                 onClick={handleSave}
@@ -537,7 +536,7 @@ export default function FederationPage() {
                 ) : (
                   <Check className="h-4 w-4" />
                 )}
-                {editingId ? "Speichern" : "Hinzufuegen"}
+                {editingId ? "Save" : "Add"}
               </button>
             </div>
           </div>

@@ -61,10 +61,10 @@ function scoreBg(score: number): string {
 }
 
 function scoreLabel(score: number): string {
-  if (score < 2) return "Sicher legitim";
-  if (score < 4) return "Wahrscheinlich legitim";
-  if (score < 6) return "Unsicher";
-  if (score < 8) return "Wahrscheinlich Spam";
+  if (score < 2) return "Certainly legitimate";
+  if (score < 4) return "Probably legitimate";
+  if (score < 6) return "Uncertain";
+  if (score < 8) return "Probably spam";
   return "Spam / Phishing";
 }
 
@@ -94,7 +94,7 @@ export default function AITestPage() {
     } catch (e) {
       setResult({
         status: "error",
-        error: e instanceof Error ? e.message : "Verbindungsfehler",
+        error: e instanceof Error ? e.message : "Connection error",
       });
     } finally {
       setLoading(false);
@@ -116,7 +116,7 @@ export default function AITestPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">AI Spam-Test</h1>
           <p className="text-sm text-slate-400">
-            Teste die KI-Klassifizierung mit einer Test-E-Mail
+            Test the AI classification with a test email
           </p>
         </div>
       </div>
@@ -124,7 +124,7 @@ export default function AITestPage() {
       {/* Presets */}
       <div>
         <label className="mb-2 block text-sm font-medium text-slate-300">
-          Vorlagen
+          Templates
         </label>
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p, i) => (
@@ -145,7 +145,7 @@ export default function AITestPage() {
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-300">
-              Absender
+              Sender
             </label>
             <input
               value={fromAddr}
@@ -156,7 +156,7 @@ export default function AITestPage() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-300">
-              Empf&auml;nger
+              Recipient
             </label>
             <input
               value={toAddr}
@@ -167,23 +167,23 @@ export default function AITestPage() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-300">
-              Betreff
+              Subject
             </label>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="E-Mail Betreff"
+              placeholder="Email subject"
               className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-300">
-              Inhalt
+              Content
             </label>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="E-Mail Text..."
+              placeholder="Email body..."
               rows={8}
               className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -199,7 +199,7 @@ export default function AITestPage() {
             ) : (
               <Send className="h-4 w-4" />
             )}
-            {loading ? "Analysiere..." : "KI-Analyse starten"}
+            {loading ? "Analyzing..." : "Start AI Analysis"}
           </button>
         </div>
 
@@ -238,7 +238,7 @@ export default function AITestPage() {
                   {/* Reason */}
                   <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
                     <p className="mb-1 text-xs font-medium uppercase text-slate-500">
-                      Begr&uuml;ndung
+                      Reasoning
                     </p>
                     <p className="text-sm text-slate-300">{result.reason}</p>
                   </div>
@@ -248,7 +248,7 @@ export default function AITestPage() {
                     <div className="rounded-lg border border-slate-800 bg-slate-900 p-3">
                       <div className="flex items-center gap-2 text-slate-400">
                         <Clock className="h-4 w-4" />
-                        <span className="text-xs">Dauer</span>
+                        <span className="text-xs">Duration</span>
                       </div>
                       <p className="mt-1 text-lg font-semibold text-white">
                         {result.elapsed_ms} ms
@@ -257,7 +257,7 @@ export default function AITestPage() {
                     <div className="rounded-lg border border-slate-800 bg-slate-900 p-3">
                       <div className="flex items-center gap-2 text-slate-400">
                         <Zap className="h-4 w-4" />
-                        <span className="text-xs">Modell</span>
+                        <span className="text-xs">Model</span>
                       </div>
                       <p className="mt-1 text-sm font-semibold text-white">
                         {result.provider} / {result.model}
@@ -271,7 +271,7 @@ export default function AITestPage() {
                   <div className="flex items-center gap-3">
                     <XCircle className="h-8 w-8 text-red-400" />
                     <div>
-                      <p className="font-medium text-red-400">Fehler</p>
+                      <p className="font-medium text-red-400">Error</p>
                       <p className="mt-1 text-sm text-red-300">
                         {result.error}
                       </p>
@@ -279,7 +279,7 @@ export default function AITestPage() {
                   </div>
                   {result.elapsed_ms !== undefined && (
                     <p className="mt-3 text-xs text-red-400/60">
-                      Nach {result.elapsed_ms} ms
+                      After {result.elapsed_ms} ms
                       {result.provider && ` (${result.provider}/${result.model})`}
                     </p>
                   )}
@@ -291,8 +291,8 @@ export default function AITestPage() {
               <div className="text-center">
                 <Brain className="mx-auto h-12 w-12 text-slate-700" />
                 <p className="mt-3 text-sm text-slate-500">
-                  W&auml;hle eine Vorlage oder schreibe eine Test-Mail
-                  und klicke &quot;KI-Analyse starten&quot;
+                  Select a template or write a test email
+                  and click &quot;Start AI Analysis&quot;
                 </p>
               </div>
             </div>

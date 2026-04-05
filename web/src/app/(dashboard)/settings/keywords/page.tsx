@@ -15,16 +15,16 @@ interface KeywordRule {
 }
 
 const MATCH_TYPE_LABELS: Record<string, string> = {
-  contains: "Enthaelt",
-  exact: "Exakt",
+  contains: "Contains",
+  exact: "Exact",
   regex: "Regex",
 };
 
 const MATCH_FIELD_LABELS: Record<string, string> = {
-  subject: "Betreff",
+  subject: "Subject",
   body: "Body",
-  from: "Absender",
-  any: "Ueberall",
+  from: "Sender",
+  any: "Any",
 };
 
 const MATCH_TYPE_COLORS: Record<string, string> = {
@@ -81,10 +81,10 @@ export default function KeywordsPage() {
         body: JSON.stringify({ rules: data.rules, mode }),
       });
       const result = await res.json();
-      alert(`Import: ${result.imported} importiert, ${result.skipped} uebersprungen`);
+      alert(`Import: ${result.imported} imported, ${result.skipped} skipped`);
       fetchRules();
     } catch (e) {
-      alert("Import fehlgeschlagen: " + (e instanceof Error ? e.message : "Unbekannter Fehler"));
+      alert("Import failed: " + (e instanceof Error ? e.message : "Unknown error"));
     } finally {
       setImportLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -175,9 +175,9 @@ export default function KeywordsPage() {
         <div className="flex items-center gap-3">
           <Type className="h-7 w-7 text-blue-500" />
           <div>
-            <h1 className="text-2xl font-bold text-white">Keyword-Regeln</h1>
+            <h1 className="text-2xl font-bold text-white">Keyword Rules</h1>
             <p className="text-sm text-slate-400">
-              Keywords mit Score-Anpassungen fuer Spam-Erkennung
+              Keywords with score adjustments for spam detection
             </p>
           </div>
         </div>
@@ -197,7 +197,7 @@ export default function KeywordsPage() {
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
-                const mode = confirm("Bestehende Regeln behalten und neue hinzufuegen?\n\nOK = Zusammenfuehren\nAbbrechen = Alle ersetzen") ? "merge" : "replace";
+                const mode = confirm("Keep existing rules and add new ones?\n\nOK = Merge\nCancel = Replace all") ? "merge" : "replace";
                 handleImport(file, mode);
               }
             }}
@@ -215,7 +215,7 @@ export default function KeywordsPage() {
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
           >
             <Plus className="h-4 w-4" />
-            Keyword hinzufuegen
+            Add Keyword
           </button>
         </div>
       </div>
@@ -224,8 +224,8 @@ export default function KeywordsPage() {
       <div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
         <Info className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
         <p className="text-sm text-blue-300">
-          Keywords werden im Betreff, Body oder Absender gesucht. Positive Scores erhoehen den
-          Spam-Verdacht, negative verringern ihn.
+          Keywords are searched in subject, body or sender. Positive scores increase
+          spam suspicion, negative scores decrease it.
         </p>
       </div>
 
@@ -239,20 +239,20 @@ export default function KeywordsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 text-left text-slate-400">
-                <th className="px-4 py-3 font-medium">Aktiv</th>
+                <th className="px-4 py-3 font-medium">Active</th>
                 <th className="px-4 py-3 font-medium">Keyword</th>
-                <th className="px-4 py-3 font-medium">Typ</th>
-                <th className="px-4 py-3 font-medium">Feld</th>
+                <th className="px-4 py-3 font-medium">Type</th>
+                <th className="px-4 py-3 font-medium">Field</th>
                 <th className="px-4 py-3 font-medium text-right">Score</th>
-                <th className="px-4 py-3 font-medium">Beschreibung</th>
-                <th className="px-4 py-3 font-medium text-right">Aktionen</th>
+                <th className="px-4 py-3 font-medium">Description</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {rules.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
-                    Keine Keyword-Regeln vorhanden.
+                    No keyword rules configured.
                   </td>
                 </tr>
               )}
@@ -313,14 +313,14 @@ export default function KeywordsPage() {
                       <button
                         onClick={() => openEdit(rule)}
                         className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-                        title="Bearbeiten"
+                        title="Edit"
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => setDeleteConfirm(rule.id)}
                         className="rounded p-1.5 text-slate-400 hover:bg-red-900/30 hover:text-red-400 transition-colors"
-                        title="Loeschen"
+                        title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -339,7 +339,7 @@ export default function KeywordsPage() {
           <div className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-900 p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">
-                {editingRule ? "Keyword bearbeiten" : "Keyword hinzufuegen"}
+                {editingRule ? "Edit Keyword" : "Add Keyword"}
               </h2>
               <button
                 onClick={() => setDialogOpen(false)}
@@ -357,39 +357,39 @@ export default function KeywordsPage() {
                   onChange={(e) => setKeyword(e.target.value)}
                   required
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="z.B. viagra, lottery, ..."
+                  placeholder="e.g. viagra, lottery, ..."
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Typ</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Type</label>
                   <select
                     value={matchType}
                     onChange={(e) => setMatchType(e.target.value as typeof matchType)}
                     className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
-                    <option value="contains">Enthaelt</option>
-                    <option value="exact">Exakt</option>
+                    <option value="contains">Contains</option>
+                    <option value="exact">Exact</option>
                     <option value="regex">Regex</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Feld</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Field</label>
                   <select
                     value={matchField}
                     onChange={(e) => setMatchField(e.target.value as typeof matchField)}
                     className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
-                    <option value="subject">Betreff</option>
+                    <option value="subject">Subject</option>
                     <option value="body">Body</option>
-                    <option value="from">Absender</option>
-                    <option value="any">Ueberall</option>
+                    <option value="from">Sender</option>
+                    <option value="any">Any</option>
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Score-Anpassung
+                  Score Adjustment
                 </label>
                 <input
                   type="number"
@@ -402,14 +402,14 @@ export default function KeywordsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Beschreibung (optional)
+                  Description (optional)
                 </label>
                 <input
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Optionale Beschreibung..."
+                  placeholder="Optional description..."
                 />
               </div>
               <div className="flex justify-end gap-3 pt-2">
@@ -418,13 +418,13 @@ export default function KeywordsPage() {
                   onClick={() => setDialogOpen(false)}
                   className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
                 >
-                  Abbrechen
+                  Cancel
                 </button>
                 <button
                   type="submit"
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
                 >
-                  {editingRule ? "Speichern" : "Hinzufuegen"}
+                  {editingRule ? "Save" : "Add"}
                 </button>
               </div>
             </form>
@@ -436,23 +436,23 @@ export default function KeywordsPage() {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-slate-900 p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-white mb-2">Keyword loeschen?</h2>
+            <h2 className="text-lg font-semibold text-white mb-2">Delete keyword?</h2>
             <p className="text-sm text-slate-400 mb-4">
-              Soll diese Keyword-Regel wirklich geloescht werden? Diese Aktion kann nicht
-              rueckgaengig gemacht werden.
+              Are you sure you want to delete this keyword rule? This action cannot be
+              undone.
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
                 className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
               >
-                Abbrechen
+                Cancel
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirm)}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
               >
-                Loeschen
+                Delete
               </button>
             </div>
           </div>
