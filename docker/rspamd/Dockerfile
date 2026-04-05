@@ -4,5 +4,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends socat && rm -rf
 COPY keypair-api.sh /keypair-api.sh
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /keypair-api.sh /entrypoint.sh
-USER _rspamd
+# Entrypoint runs as root (writes to override.d), then drops to _rspamd
 ENTRYPOINT ["/entrypoint.sh"]
