@@ -2037,31 +2037,29 @@ async def list_scanner_clients():
 
 @app.post("/api/scanner-clients")
 async def create_scanner_client(req: ScannerClientRequest):
-    """Generate a curve25519 keypair and create a scanner client."""
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    import base64
-    import hashlib
+    """Generate a keypair via rspamadm in the rspamd container."""
+    import re as re_mod
 
-    # Generate X25519 keypair (same as rspamd uses)
-    private_key = X25519PrivateKey.generate()
-    privkey_bytes = private_key.private_bytes_raw()
-    pubkey_bytes = private_key.public_key().public_bytes_raw()
+    # Call rspamadm keypair via rspamd container's socat keypair-API (port 11336)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post("http://rspamd:11336/keypair")
+            if resp.status_code != 200:
+                raise HTTPException(status_code=500, detail="Keypair generation failed")
+            output = resp.text
+    except httpx.ConnectError:
+        raise HTTPException(status_code=500, detail="Cannot reach rspamd keypair API (port 11336)")
 
-    # rspamd uses base32 encoding (z-base-32 variant)
-    # For simplicity we use a hex-compatible format that rspamd also accepts
-    import base64 as b64
+    pubkey_m = re_mod.search(r'pubkey\s*=\s*"([^"]+)"', output)
+    privkey_m = re_mod.search(r'privkey\s*=\s*"([^"]+)"', output)
+    kid_m = re_mod.search(r'id\s*=\s*"([^"]+)"', output)
 
-    # rspamd keypair format uses custom base32, we'll use hex which rspamd also supports
-    pubkey_b32 = base64.b32encode(pubkey_bytes).decode().lower().rstrip("=")
-    privkey_b32 = base64.b32encode(privkey_bytes).decode().lower().rstrip("=")
+    if not pubkey_m or not privkey_m or not kid_m:
+        raise HTTPException(status_code=500, detail=f"Failed to parse keypair: {output[:200]}")
 
-    # Generate keypair ID (hash of pubkey)
-    keypair_hash = hashlib.blake2b(pubkey_bytes, digest_size=64).hexdigest()
-    keypair_id = base64.b32encode(bytes.fromhex(keypair_hash)).decode().lower().rstrip("=")
-
-    pubkey_str = pubkey_b32
-    privkey_str = privkey_b32
-    kid_str = keypair_id[:100]
+    pubkey_str = pubkey_m.group(1)
+    privkey_str = privkey_m.group(1)
+    kid_str = kid_m.group(1)
 
     # Get proxy hostname for client config
     async with async_session() as session:

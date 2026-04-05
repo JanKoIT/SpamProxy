@@ -58,7 +58,9 @@ services:
       retries: 3
 
   rspamd:
-    image: rspamd/rspamd:latest
+    build:
+      context: ./docker/rspamd
+      dockerfile: Dockerfile
     restart: unless-stopped
     volumes:
       - ./docker/rspamd/local.d:/etc/rspamd/local.d
