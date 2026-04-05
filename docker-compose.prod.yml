@@ -19,10 +19,11 @@ services:
 
   rspamd:
     restart: always
-    # Alle Ports nur intern - rspamd WebUI via Nginx /rspamd/
-    # Federation-Ports nur oeffnen wenn Peers konfiguriert:
-    #   ./scripts/deploy.sh federation-add <peer-ip>
-    ports: []
+    ports:
+      # Port 11333: Scanner engine for remote clients (federation/scanner-clients)
+      # Firewall restricts access to known client IPs:
+      #   ./scripts/deploy.sh federation-add <client-ip> "name"
+      - "11333:11333"
 
   postfix:
     restart: always
