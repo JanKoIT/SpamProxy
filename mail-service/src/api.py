@@ -2096,14 +2096,14 @@ keypair {{
     algorithm = "curve25519";
 }}
 '''
-    normal_inc = "/etc/rspamd/local.d/worker-normal.inc"
+    keypairs_file = "/etc/rspamd/keypairs/scanner-keypairs.conf"
     try:
-        # Append keypair to worker-normal.inc via shared volume
-        with open(normal_inc, "a") as f:
+        os.makedirs(os.path.dirname(keypairs_file), exist_ok=True)
+        with open(keypairs_file, "a") as f:
             f.write(keypair_conf)
-        logger.info("Added keypair for client %s to worker-normal.inc", req.name)
+        logger.info("Added keypair for client %s to %s", req.name, keypairs_file)
     except Exception as e:
-        logger.warning("Could not write keypair to %s: %s (add manually)", normal_inc, e)
+        logger.warning("Could not write keypair to %s: %s", keypairs_file, e)
 
     # Client gets the PUBLIC key to encrypt scan requests
     client_worker_proxy = f'''# SpamProxy Remote Scanner Config for "{req.name}"
