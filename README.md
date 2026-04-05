@@ -53,6 +53,14 @@ SpamProxy is placed as MX in front of your actual mail server and filters both i
 - **Keyword-based scoring** with import/export
 - **Per-domain backend routing** (each domain can have its own mail server)
 
+### Scanner Clients (Centralized Scanning)
+- **Remote scan engine**: Other mail servers can use SpamProxy as their centralized rspamd scanner
+- **Encrypted communication** via curve25519 keypairs (generated in web interface)
+- **No double scanning**: Client rspamd proxy forwards to SpamProxy, Postfix delivers locally
+- **Scan history**: All scans (local + remote clients) visible in web interface with learn buttons
+- **Keypair management**: Generate, view, and delete client keypairs in the web UI
+- **Setup wizard**: Ready-to-use `worker-proxy.inc` config and step-by-step instructions
+
 ### Federation
 - **Bayes learning sync** between multiple SpamProxy/rspamd instances
 - **Fuzzy hash sharing** for spam fingerprints
@@ -73,8 +81,15 @@ SpamProxy is placed as MX in front of your actual mail server and filters both i
 - **DKIM key generator** with DNS record display
 - **AI test** (classify test mails with templates)
 - **Sender domain verification** with SPF/DKIM/MX checks
+- **rspamd rules editor** (adjust symbol scores)
+- **Bayes training** with automatic corpus download and Dovecot integration
+- **Scan history** (all rspamd scans including remote clients, with learn buttons)
+- **Mail queue** viewer with requeue/delete/hold actions
+- **Delivery status** tracking (bounces, deferrals from Postfix log)
 - **Outgoing auth management** (SMTP credentials)
+- **Scanner clients** (manage remote scan clients with keypair generation)
 - **Federation** (manage rspamd peers)
+- **Demo mode** for screenshots without real data
 - **General settings** (thresholds, AI config, etc.)
 
 ## Architecture
@@ -204,6 +219,33 @@ Connect multiple SpamProxy instances:
 
 # Then configure peers in web interface under Settings > Federation
 ```
+
+### Scanner Clients
+
+Use SpamProxy as a centralized scan engine for other mail servers (no double scanning):
+
+```bash
+# 1. In the web interface: Settings > Scanner Clients > Add Client
+#    This generates a keypair and shows the client config
+
+# 2. On the SpamProxy server: open firewall for client IP
+./scripts/deploy.sh federation-add <CLIENT-IP> "client-name"
+
+# 3. Restart rspamd to load the new keypair
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart rspamd
+
+# 4. On the CLIENT server: install rspamd and apply the generated config
+apt install rspamd
+# Copy the worker-proxy.inc from the web interface to /etc/rspamd/local.d/
+# Disable local scanning:
+echo 'enabled = false;' > /etc/rspamd/local.d/worker-normal.inc
+# Configure Postfix:
+postconf -e 'smtpd_milters = inet:localhost:11332'
+postconf -e 'milter_default_action = accept'
+systemctl restart rspamd postfix
+```
+
+Mail flow: `Client Postfix → local rspamd proxy → SpamProxy rspamd (encrypted) → result back → Postfix delivers locally`
 
 ### Management
 
