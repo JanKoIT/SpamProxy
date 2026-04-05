@@ -3,7 +3,8 @@
 import { useState, FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, Loader2 } from "lucide-react";
+import { ShieldAlert, Loader2, FlaskConical } from "lucide-react";
+import { enableDemo } from "@/lib/demo-mode";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -110,6 +111,20 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
+
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              enableDemo();
+              router.push("/dashboard?demo");
+            }}
+            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-amber-400 transition-colors"
+          >
+            <FlaskConical className="h-3.5 w-3.5" />
+            Demo Mode
+          </button>
+        </div>
       </div>
     </div>
   );
