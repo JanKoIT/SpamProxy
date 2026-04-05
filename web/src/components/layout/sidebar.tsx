@@ -34,6 +34,7 @@ const navItems = [
   { href: "/postfix-log", label: "Postfix Log", icon: Terminal },
   { href: "/settings/domains", label: "Domains", icon: Globe },
   { href: "/settings/security", label: "Security", icon: Shield },
+  { href: "/settings/rspamd-symbols", label: "rspamd Rules", icon: Shield },
   { href: "/settings/blocklists", label: "Blocklists", icon: List },
   { href: "/settings/access-lists", label: "White-/Blacklist", icon: ShieldCheck },
   { href: "/settings/scoring", label: "Scoring", icon: TrendingUp },

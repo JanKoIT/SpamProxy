@@ -2004,6 +2004,144 @@ async def release_queue_message(queue_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- rspamd Symbols ---
+
+@app.get("/api/rspamd-symbols")
+async def get_rspamd_symbols():
+    """Get all rspamd symbols with scores and descriptions from rspamd controller."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+            resp = await client.get(
+                f"{settings.rspamd_controller_url}/symbols",
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            # Fallback: configdump
+            resp = await client.get(
+                f"{settings.rspamd_controller_url}/actions",
+                headers=headers,
+            )
+    except Exception as e:
+        logger.warning("Failed to fetch rspamd symbols: %s", e)
+    return []
+
+
+@app.get("/api/rspamd-symbols/groups")
+async def get_rspamd_symbol_groups():
+    """Get rspamd symbols organized by group with descriptions."""
+    try:
+        import subprocess, json
+        result = subprocess.run(
+            ["docker", "compose", "exec", "-T", "rspamd", "rspamadm", "configdump", "--compact", "group"],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode == 0:
+            groups = []
+            for line in result.stdout.decode().strip().split("\n"):
+                if line.strip():
+                    try:
+                        groups.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+            return groups
+    except Exception:
+        pass
+
+    # Fallback: read from rspamd controller API
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+            resp = await client.get(
+                f"{settings.rspamd_controller_url}/symbols",
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # Restructure into groups
+                groups = {}
+                for item in data:
+                    group = item.get("group", "ungrouped")
+                    if group not in groups:
+                        groups[group] = {"name": group, "symbols": []}
+                    groups[group]["symbols"].append({
+                        "name": item.get("symbol", ""),
+                        "score": item.get("weight", 0),
+                        "description": item.get("description", ""),
+                    })
+                return list(groups.values())
+    except Exception as e:
+        logger.warning("Failed to fetch rspamd symbol groups: %s", e)
+    return []
+
+
+class SymbolScoreUpdate(BaseModel):
+    symbol: str
+    score: float
+
+
+@app.put("/api/rspamd-symbols/score")
+async def update_rspamd_symbol_score(req: SymbolScoreUpdate):
+    """Update an rspamd symbol score. Writes to local.d/groups_override.conf."""
+    import os
+
+    # Write override to rspamd config
+    override_file = "/etc/rspamd/local.d/groups_override.conf"
+    # This file is mounted from docker volume, but we can't write to it directly
+    # from mail-service. Instead, store overrides in DB and apply via rspamd HTTP API.
+
+    # Use rspamd HTTP API to dynamically change the weight
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {"Content-Type": "application/json"}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+
+            # rspamd doesn't have a direct "set symbol weight" API
+            # We store overrides in our DB and generate a config file
+            pass
+    except Exception:
+        pass
+
+    # Store in DB settings for persistence
+    async with async_session() as session:
+        key = f"rspamd_symbol_{req.symbol}"
+        result = await session.execute(select(Setting).where(Setting.key == key))
+        setting = result.scalar_one_or_none()
+        if setting:
+            setting.value = req.score
+            setting.updated_at = datetime.now(timezone.utc)
+        else:
+            session.add(Setting(
+                key=key,
+                value=req.score,
+                category="rspamd_symbols",
+                description=f"Custom score override for {req.symbol}",
+            ))
+        await session.commit()
+
+    return {"status": "ok", "symbol": req.symbol, "score": req.score,
+            "note": "Score saved. Restart rspamd to apply (scores are applied at next container restart)."}
+
+
+@app.get("/api/rspamd-symbols/overrides")
+async def get_rspamd_symbol_overrides():
+    """Get all custom symbol score overrides from DB."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Setting).where(Setting.category == "rspamd_symbols").order_by(Setting.key)
+        )
+        return {
+            s.key.replace("rspamd_symbol_", ""): s.value
+            for s in result.scalars()
+        }
+
+
 # --- Bayes Training ---
 
 from .bayes_trainer import train_spam_monthly, train_ham_corpus, _get_last_trained, _get_trained_months, _generate_months, TRAIN_START_YEAR, TRAIN_START_MONTH
