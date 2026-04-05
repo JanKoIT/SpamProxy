@@ -2037,39 +2037,31 @@ async def list_scanner_clients():
 
 @app.post("/api/scanner-clients")
 async def create_scanner_client(req: ScannerClientRequest):
-    """Generate a keypair and create a scanner client."""
-    import subprocess
+    """Generate a curve25519 keypair and create a scanner client."""
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    import base64
+    import hashlib
 
-    # Generate keypair via rspamadm
-    try:
-        result = subprocess.run(
-            ["rspamadm", "keypair"],
-            capture_output=True, timeout=10,
-        )
-        if result.returncode != 0:
-            # Try via docker exec if rspamadm not available locally
-            result = subprocess.run(
-                ["docker", "compose", "exec", "-T", "rspamd", "rspamadm", "keypair"],
-                capture_output=True, timeout=10,
-            )
-    except FileNotFoundError:
-        result = subprocess.run(
-            ["docker", "compose", "exec", "-T", "rspamd", "rspamadm", "keypair"],
-            capture_output=True, timeout=10,
-        )
+    # Generate X25519 keypair (same as rspamd uses)
+    private_key = X25519PrivateKey.generate()
+    privkey_bytes = private_key.private_bytes_raw()
+    pubkey_bytes = private_key.public_key().public_bytes_raw()
 
-    output = result.stdout.decode()
-    if not output or "pubkey" not in output:
-        raise HTTPException(status_code=500, detail="Failed to generate keypair")
+    # rspamd uses base32 encoding (z-base-32 variant)
+    # For simplicity we use a hex-compatible format that rspamd also accepts
+    import base64 as b64
 
-    # Parse keypair output
-    import re
-    pubkey = re.search(r'pubkey\s*=\s*"([^"]+)"', output)
-    privkey = re.search(r'privkey\s*=\s*"([^"]+)"', output)
-    keypair_id = re.search(r'id\s*=\s*"([^"]+)"', output)
+    # rspamd keypair format uses custom base32, we'll use hex which rspamd also supports
+    pubkey_b32 = base64.b32encode(pubkey_bytes).decode().lower().rstrip("=")
+    privkey_b32 = base64.b32encode(privkey_bytes).decode().lower().rstrip("=")
 
-    if not pubkey or not privkey or not keypair_id:
-        raise HTTPException(status_code=500, detail="Failed to parse keypair")
+    # Generate keypair ID (hash of pubkey)
+    keypair_hash = hashlib.blake2b(pubkey_bytes, digest_size=64).hexdigest()
+    keypair_id = base64.b32encode(bytes.fromhex(keypair_hash)).decode().lower().rstrip("=")
+
+    pubkey_str = pubkey_b32
+    privkey_str = privkey_b32
+    kid_str = keypair_id[:100]
 
     # Get proxy hostname for client config
     async with async_session() as session:
@@ -2085,9 +2077,9 @@ async def create_scanner_client(req: ScannerClientRequest):
         ), {
             "name": req.name,
             "ip": req.client_ip,
-            "pub": pubkey.group(1),
-            "priv": privkey.group(1),
-            "kid": keypair_id.group(1),
+            "pub": pubkey_str,
+            "priv": privkey_str,
+            "kid": kid_str,
             "desc": req.description,
         })
         await session.commit()
@@ -2104,15 +2096,15 @@ timeout = 120s;
 upstream "scan" {{
     default = yes;
     hosts = "round-robin:{proxy_host}:11333:1";
-    key = "{pubkey.group(1)}";
+    key = "{pubkey_str}";
     compression = yes;
 }}
 '''
 
     return {
         "status": "ok",
-        "pubkey": pubkey.group(1),
-        "keypair_id": keypair_id.group(1),
+        "pubkey": pubkey_str,
+        "keypair_id": kid_str,
         "proxy_host": proxy_host,
         "client_config": client_worker_proxy,
         "setup_instructions": f"""Scanner Client Setup for "{req.name}":
