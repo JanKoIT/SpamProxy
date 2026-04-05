@@ -8,9 +8,8 @@ import {
   Search,
   Eye,
   X,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Server,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 
 interface ScanRow {
@@ -164,12 +163,13 @@ export default function ScanHistoryPage() {
                 <th className="px-3 py-2.5 font-medium text-right">Score</th>
                 <th className="px-3 py-2.5 font-medium">Action</th>
                 <th className="px-3 py-2.5 font-medium">Scan</th>
+                <th className="px-3 py-2.5 font-medium">Learn</th>
                 <th className="px-3 py-2.5 font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-12 text-center text-slate-500">
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-slate-500">
                   {rows.length === 0 ? "No scan history yet. History fills up as mails are scanned." : "No matches found."}
                 </td></tr>
               )}
@@ -198,6 +198,9 @@ export default function ScanHistoryPage() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
                     {row.scan_time ? `${row.scan_time.toFixed(0)}ms` : "-"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <ScanLearnButtons row={row} />
                   </td>
                   <td className="px-3 py-2">
                     <button onClick={() => setDetail(row)}
@@ -257,10 +260,73 @@ export default function ScanHistoryPage() {
                   </div>
                 </div>
               )}
+
+              {/* Learn buttons */}
+              <div className="flex items-center gap-3 pt-2">
+                <span className="text-sm text-slate-400">Learn:</span>
+                <ScanLearnButtons row={detail} />
+              </div>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* --- Learn Buttons for Scan History --- */
+
+function ScanLearnButtons({ row }: { row: ScanRow }) {
+  const [loading, setLoading] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  async function learn(type: "spam" | "ham") {
+    setLoading(type);
+    try {
+      // Build a minimal message from scan history data for learning
+      const headers = [
+        `From: ${row.sender_mime || "unknown@unknown"}`,
+        `To: ${row.rcpt_mime || "unknown@unknown"}`,
+        `Subject: ${row.subject || ""}`,
+        `Message-ID: ${row.message_id || ""}`,
+        `Date: ${new Date(row.unix_time * 1000).toUTCString()}`,
+        "",
+        `Scanned message - learned as ${type} from scan history`,
+      ].join("\r\n");
+
+      const res = await fetch(`/api/learn/${type}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new TextEncoder().encode(headers),
+      });
+      if (res.ok) {
+        setDone(type);
+      }
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  if (done) {
+    return (
+      <span className={`text-xs ${done === "spam" ? "text-red-400" : "text-green-400"}`}>
+        {done === "spam" ? "Learned as spam" : "Learned as ham"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex gap-1">
+      <button onClick={() => learn("spam")} disabled={loading !== null}
+        title="Learn as spam"
+        className="rounded p-1 text-red-400/60 hover:bg-red-900/30 hover:text-red-400 disabled:opacity-50 transition-colors">
+        {loading === "spam" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsDown className="h-3.5 w-3.5" />}
+      </button>
+      <button onClick={() => learn("ham")} disabled={loading !== null}
+        title="Learn as ham (not spam)"
+        className="rounded p-1 text-green-400/60 hover:bg-green-900/30 hover:text-green-400 disabled:opacity-50 transition-colors">
+        {loading === "ham" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
+      </button>
     </div>
   );
 }
