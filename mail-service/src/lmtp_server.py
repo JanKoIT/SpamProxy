@@ -223,8 +223,21 @@ class ContentFilterHandler:
                     except Exception:
                         logger.warning("AI classification failed, using rspamd score only")
 
+                # Determine action based on score
+                # "discarded" = silently dropped (no bounce, protects reputation)
+                # "rejected" = bounced back (only for moderate spam)
+                is_spoofed_sender = (
+                    mail_from and rcpt_to and
+                    mail_from.lower() == rcpt_to[0].lower()
+                ) if rcpt_to else False
+
                 if final_score >= REJECT_THRESHOLD:
-                    action = "rejected"
+                    if final_score >= REJECT_THRESHOLD * 1.5 or is_spoofed_sender:
+                        # Very high score or spoofed From=To: silently discard
+                        # No bounce = no backscatter = protects reputation
+                        action = "discarded"
+                    else:
+                        action = "rejected"
                 elif final_score >= QUARANTINE_THRESHOLD:
                     action = "quarantined"
                 else:
@@ -267,6 +280,10 @@ class ContentFilterHandler:
                 return "250 OK"
             elif action == "quarantined":
                 return "250 Message quarantined"
+            elif action == "discarded":
+                # Silent discard - accept but don't deliver (no bounce)
+                logger.info("DISCARDED (no bounce) score=%.1f spoofed=%s", final_score, is_spoofed_sender)
+                return "250 OK"
             else:
                 return "550 Message rejected as spam"
 

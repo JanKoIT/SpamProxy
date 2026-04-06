@@ -50,6 +50,14 @@ async def ensure_tables():
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """))
+        # Update mail_log action constraint to include 'discarded'
+        await session.execute(text(
+            "ALTER TABLE mail_log DROP CONSTRAINT IF EXISTS mail_log_action_check"
+        ))
+        await session.execute(text(
+            "ALTER TABLE mail_log ADD CONSTRAINT mail_log_action_check "
+            "CHECK (action IN ('delivered', 'quarantined', 'rejected', 'discarded', 'error'))"
+        ))
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_delivery_status_created ON delivery_status(created_at DESC)"
         ))

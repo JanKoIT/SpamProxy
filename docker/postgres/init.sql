@@ -41,7 +41,7 @@ CREATE TABLE mail_log (
     ai_score REAL,
     final_score REAL,
     rspamd_symbols JSONB,
-    action VARCHAR(20) NOT NULL CHECK (action IN ('delivered', 'quarantined', 'rejected', 'error')),
+    action VARCHAR(20) NOT NULL CHECK (action IN ('delivered', 'quarantined', 'rejected', 'discarded', 'error')),
     backend_host VARCHAR(255),
     processing_time_ms INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

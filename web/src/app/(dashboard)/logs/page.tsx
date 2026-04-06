@@ -34,6 +34,7 @@ const ACTION_COLORS: Record<string, string> = {
   delivered: "bg-green-500/20 text-green-400 border-green-500/30",
   quarantined: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   rejected: "bg-red-500/20 text-red-400 border-red-500/30",
+  discarded: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   error: "bg-orange-500/20 text-orange-400 border-orange-500/30",
 };
 
@@ -135,7 +136,7 @@ export default function LogsPage() {
           ))}
         </div>
         <div className="flex rounded-md border border-slate-700 bg-slate-800">
-          {["", "delivered", "quarantined", "rejected"].map((v) => (
+          {["", "delivered", "quarantined", "rejected", "discarded"].map((v) => (
             <button key={v} onClick={() => { setAction(v); setPage(1); }}
               className={`px-3 py-1.5 text-xs transition-colors ${action === v ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-700"} first:rounded-l-md last:rounded-r-md`}
             >{v || "All"}</button>
