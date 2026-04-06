@@ -141,7 +141,7 @@ class ContentFilterHandler:
                     if not sd.last_dns_check or \
                        (datetime.now(timezone.utc) - sd.last_dns_check.replace(tzinfo=timezone.utc)).total_seconds() > 3600:
                         try:
-                            from .api import _check_spf, _check_dkim, Setting
+                            from .api import _check_spf, _check_dkim
                             proxy_hostname = "localhost"
                             s_result = await check_db.execute(
                                 select(Setting).where(Setting.key == "proxy_hostname")
