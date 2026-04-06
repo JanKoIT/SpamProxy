@@ -11,7 +11,7 @@ from aiosmtpd.lmtp import LMTP
 
 from .config import settings
 from .db import async_session
-from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule
+from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule, Setting
 from .quarantine.manager import QuarantineManager
 from .scanning.ai_classifier import AIClassifier
 from sqlalchemy import select
@@ -207,19 +207,39 @@ class ContentFilterHandler:
                     list_adj = self._check_mailing_list(parsed)
                     final_score += list_adj
 
-                # AI classification for grey zone
+                # Check if sender is known (first-time sender detection)
+                is_first_sender = False
+                force_ai = False
+                if not is_outgoing and mail_from:
+                    is_first_sender = await self._track_sender(db, mail_from, final_score)
+                    if is_first_sender:
+                        # Check if "AI scan first sender" setting is enabled
+                        ai_first_result = await db.execute(
+                            select(Setting).where(Setting.key == "ai_scan_first_sender")
+                        )
+                        ai_first_setting = ai_first_result.scalar_one_or_none()
+                        if ai_first_setting and (ai_first_setting.value is True or ai_first_setting.value == "true"):
+                            force_ai = True
+
+                # AI classification: grey zone OR first-time sender
                 ai_score = None
                 ai_reason = ""
-                if (
+                should_ai_scan = (
                     self.ai_classifier
                     and settings.ai_enabled
-                    and settings.ai_grey_zone_min <= final_score <= settings.ai_grey_zone_max
-                ):
+                    and (
+                        (settings.ai_grey_zone_min <= final_score <= settings.ai_grey_zone_max)
+                        or force_ai
+                    )
+                )
+                if should_ai_scan:
                     try:
                         ai_score, ai_reason = await self.ai_classifier.classify(raw_message)
                         # Weighted: 60% rspamd+rules, 40% AI
                         final_score = (final_score * 0.6) + (ai_score * 0.4)
-                        logger.info("AI score=%.1f reason=%s final=%.1f", ai_score, ai_reason, final_score)
+                        reason_prefix = "[FIRST SENDER] " if force_ai else ""
+                        logger.info("%sAI score=%.1f reason=%s final=%.1f",
+                                   reason_prefix, ai_score, ai_reason, final_score)
                     except Exception:
                         logger.warning("AI classification failed, using rspamd score only")
 
@@ -447,6 +467,43 @@ class ContentFilterHandler:
                     total_adj += rule.score_adjustment
 
         return total_adj
+
+    async def _track_sender(self, session, mail_from: str, score: float) -> bool:
+        """Track sender and return True if this is a first-time sender."""
+        from sqlalchemy import text as sql_text
+        sender = mail_from.lower().strip()
+        if not sender:
+            return False
+
+        result = await session.execute(
+            sql_text("SELECT mail_count FROM known_senders WHERE sender = :s"),
+            {"s": sender},
+        )
+        row = result.first()
+
+        if row:
+            # Known sender - update stats
+            await session.execute(
+                sql_text(
+                    "UPDATE known_senders SET last_seen = NOW(), mail_count = mail_count + 1, "
+                    "avg_score = (avg_score * (mail_count - 1) + :score) / mail_count "
+                    "WHERE sender = :s"
+                ),
+                {"s": sender, "score": score},
+            )
+            return False
+        else:
+            # First-time sender
+            await session.execute(
+                sql_text(
+                    "INSERT INTO known_senders (sender, first_seen, last_seen, mail_count, avg_score, was_ai_scanned) "
+                    "VALUES (:s, NOW(), NOW(), 1, :score, true) "
+                    "ON CONFLICT (sender) DO NOTHING"
+                ),
+                {"s": sender, "score": score},
+            )
+            logger.info("First-time sender: %s (score=%.1f)", sender, score)
+            return True
 
     def _reinject(self, mail_from: str, rcpt_to: list[str], raw_message: bytes):
         with smtplib.SMTP("postfix", 10025, timeout=30) as smtp:

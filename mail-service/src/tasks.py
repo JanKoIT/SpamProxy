@@ -31,6 +31,7 @@ DEFAULT_SETTINGS = [
     ("block_google_groups", True, "scanning", "Block spam from Google Groups (freemail senders)"),
     ("block_bulk_unsolicited", True, "scanning", "Block unsolicited bulk mail without proper List-Id"),
     ("mailing_list_score", 0.0, "scanning", "Additional score for all mailing list messages"),
+    ("ai_scan_first_sender", True, "ai", "Force AI scan for every first-time sender (regardless of score)"),
 ]
 
 
@@ -77,6 +78,19 @@ async def ensure_tables():
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS known_senders (
+                sender VARCHAR(512) PRIMARY KEY,
+                first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                mail_count INTEGER NOT NULL DEFAULT 1,
+                avg_score REAL DEFAULT 0.0,
+                was_ai_scanned BOOLEAN NOT NULL DEFAULT false
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_known_senders_last ON known_senders(last_seen DESC)"
+        ))
         await session.commit()
         logger.info("Database tables verified")
 

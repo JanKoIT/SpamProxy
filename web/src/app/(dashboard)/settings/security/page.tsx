@@ -290,6 +290,17 @@ export default function SecurityPage() {
           onToggle={handleToggle}
         />
 
+        {/* AI First Sender Scan */}
+        <ToggleCard
+          icon={<Brain className="h-5 w-5 text-cyan-400" />}
+          title="AI Scan First-Time Senders"
+          description="Force AI classification for every first-time sender, regardless of rspamd score. Catches phishing and spam from unknown senders that bypasses rule-based detection."
+          settingKey="ai_scan_first_sender"
+          value={boolVal("ai_scan_first_sender")}
+          loading={savingKey === "ai_scan_first_sender"}
+          onToggle={handleToggle}
+        />
+
         {/* Google Groups Blocking */}
         <ToggleCard
           icon={<Users className="h-5 w-5 text-orange-400" />}
