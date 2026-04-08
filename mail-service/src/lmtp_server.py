@@ -25,44 +25,66 @@ REJECT_THRESHOLD = settings.spam_reject_threshold
 def parse_rspamd_score(parsed_msg) -> tuple[float, dict]:
     score = 0.0
     symbols = {}
+    found_header = False
 
-    # Check ALL X-Spamd-Result headers (mail may have multiple)
-    spamd_results = parsed_msg.get_all("X-Spamd-Result") or []
-    for spamd_result in spamd_results:
-        spamd_str = str(spamd_result)
-        score_match = re.search(r"\[\s*(-?[\d.]+)\s*/\s*[\d.]+\s*\]", spamd_str)
-        if score_match:
-            try:
-                score = float(score_match.group(1))
-            except ValueError:
-                pass
-            for sym_match in re.finditer(r"(\w+)\((-?[\d.]+)\)", spamd_str):
-                symbols[sym_match.group(1)] = {"score": float(sym_match.group(2))}
-            break  # Use first valid result
+    # Try all known rspamd header names (case-insensitive via email lib)
+    header_names = [
+        "X-Spamd-Result",
+        "X-Spam-Result",
+        "X-Rspamd-Result",
+        "X-Spam-Status",
+        "X-Spam-Score",
+    ]
 
-    # Fallback: X-Spam-Score / X-Spam-Status headers
-    if score == 0.0:
-        for header_name in ["X-Spam-Score", "X-Spam-Status"]:
-            header_val = parsed_msg.get(header_name, "")
-            if header_val:
-                val_str = str(header_val)
-                # X-Spam-Status: Yes, score=6.50
-                score_match = re.search(r"score=(-?[\d.]+)", val_str)
-                if score_match:
-                    try:
-                        score = float(score_match.group(1))
-                        break
-                    except ValueError:
-                        pass
-                # Plain number
+    for hname in header_names:
+        values = parsed_msg.get_all(hname) or []
+        for raw in values:
+            val_str = str(raw).replace("\n", " ").replace("\r", " ").replace("\t", " ")
+            found_header = True
+
+            # Format 1: "default: False [3.50 / 15.00]; SYMBOL(0.5)[..]"
+            m = re.search(r"\[\s*(-?[\d.]+)\s*/\s*[\d.]+\s*\]", val_str)
+            if m:
                 try:
-                    score = float(val_str.strip())
-                    break
+                    score = float(m.group(1))
                 except ValueError:
                     pass
 
-    if score == 0.0 and not spamd_results:
-        logger.warning("No rspamd headers found - mail may not have been scanned")
+            # Format 2: "score=6.50"
+            if score == 0.0:
+                m = re.search(r"score=(-?[\d.]+)", val_str)
+                if m:
+                    try:
+                        score = float(m.group(1))
+                    except ValueError:
+                        pass
+
+            # Format 3: plain number "6.50"
+            if score == 0.0:
+                try:
+                    score = float(val_str.strip())
+                except ValueError:
+                    pass
+
+            # Extract symbols (any format with PARENS)
+            for sym_match in re.finditer(r"([A-Z][A-Z0-9_]+)\((-?[\d.]+)\)", val_str):
+                try:
+                    symbols[sym_match.group(1)] = {"score": float(sym_match.group(2))}
+                except ValueError:
+                    pass
+
+            if score != 0.0:
+                break
+        if score != 0.0:
+            break
+
+    if not found_header:
+        # Log the headers we DID find for debugging
+        all_headers = sorted(set(parsed_msg.keys()))
+        logger.warning(
+            "No rspamd headers found. Available headers: %s",
+            ", ".join(h for h in all_headers if "spam" in h.lower() or "rspam" in h.lower()) or "(none related)",
+        )
 
     return score, symbols
 
