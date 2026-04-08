@@ -32,6 +32,9 @@ DEFAULT_SETTINGS = [
     ("block_bulk_unsolicited", True, "scanning", "Block unsolicited bulk mail without proper List-Id"),
     ("mailing_list_score", 0.0, "scanning", "Additional score for all mailing list messages"),
     ("ai_scan_first_sender", True, "ai", "Force AI scan for every first-time sender (regardless of score)"),
+    ("score_rspamd_weight", 0.6, "ai", "Weight of rspamd score in final calculation (0.0-1.0). AI weight = 1 - this value."),
+    ("ai_confidence_threshold", 6.0, "ai", "AI score threshold for 'high confidence'. Above this, AI is not diluted by low rspamd score."),
+    ("ai_floor_offset", 1.0, "ai", "When AI is confident: final_score = max(weighted, ai_score - this offset)"),
 ]
 
 

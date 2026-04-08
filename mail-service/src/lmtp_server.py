@@ -257,17 +257,24 @@ class ContentFilterHandler:
                 if should_ai_scan:
                     try:
                         ai_score, ai_reason = await self.ai_classifier.classify(raw_message)
-                        weighted = (final_score * 0.6) + (ai_score * 0.4)
-                        # If AI has high spam confidence (>= 6.0), don't let
-                        # a low rspamd score dilute it below quarantine threshold.
-                        # Use max(weighted, ai_score - 1.0) to keep AI influence.
-                        if ai_score >= 6.0:
-                            final_score = max(weighted, ai_score - 1.0)
+
+                        # Load configurable weights from DB
+                        rspamd_weight, ai_confidence_thr, ai_floor_off = await self._load_weights(db)
+                        ai_weight = 1.0 - rspamd_weight
+
+                        weighted = (final_score * rspamd_weight) + (ai_score * ai_weight)
+
+                        # If AI has high spam confidence, don't let a low rspamd
+                        # score dilute it below quarantine threshold.
+                        if ai_score >= ai_confidence_thr:
+                            final_score = max(weighted, ai_score - ai_floor_off)
                         else:
                             final_score = weighted
+
                         reason_prefix = "[FIRST SENDER] " if force_ai else ""
-                        logger.info("%sAI score=%.1f reason=%s final=%.1f",
-                                   reason_prefix, ai_score, ai_reason, final_score)
+                        logger.info("%sAI score=%.1f reason=%s final=%.1f (weights: rspamd=%.1f, ai=%.1f)",
+                                   reason_prefix, ai_score, ai_reason, final_score,
+                                   rspamd_weight, ai_weight)
                     except Exception:
                         logger.warning("AI classification failed, using rspamd score only")
 
@@ -445,6 +452,25 @@ class ContentFilterHandler:
                 total_adj += rule.score_adjustment
 
         return total_adj
+
+    async def _load_weights(self, session) -> tuple[float, float, float]:
+        """Load AI scoring weights from settings.
+        Returns (rspamd_weight, ai_confidence_threshold, ai_floor_offset)."""
+        keys = ["score_rspamd_weight", "ai_confidence_threshold", "ai_floor_offset"]
+        defaults = {"score_rspamd_weight": 0.6, "ai_confidence_threshold": 6.0, "ai_floor_offset": 1.0}
+
+        result = await session.execute(
+            select(Setting).where(Setting.key.in_(keys))
+        )
+        values = dict(defaults)
+        for s in result.scalars():
+            try:
+                values[s.key] = float(s.value)
+            except (ValueError, TypeError):
+                pass
+
+        rw = max(0.0, min(1.0, values["score_rspamd_weight"]))  # clamp to [0, 1]
+        return rw, values["ai_confidence_threshold"], values["ai_floor_offset"]
 
     async def _check_access_lists(self, session, mail_from: str, client_ip: str) -> str | None:
         """Check whitelist/blacklist. Returns 'whitelist', 'blacklist', or None."""
