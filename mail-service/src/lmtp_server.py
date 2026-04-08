@@ -257,8 +257,14 @@ class ContentFilterHandler:
                 if should_ai_scan:
                     try:
                         ai_score, ai_reason = await self.ai_classifier.classify(raw_message)
-                        # Weighted: 60% rspamd+rules, 40% AI
-                        final_score = (final_score * 0.6) + (ai_score * 0.4)
+                        weighted = (final_score * 0.6) + (ai_score * 0.4)
+                        # If AI has high spam confidence (>= 6.0), don't let
+                        # a low rspamd score dilute it below quarantine threshold.
+                        # Use max(weighted, ai_score - 1.0) to keep AI influence.
+                        if ai_score >= 6.0:
+                            final_score = max(weighted, ai_score - 1.0)
+                        else:
+                            final_score = weighted
                         reason_prefix = "[FIRST SENDER] " if force_ai else ""
                         logger.info("%sAI score=%.1f reason=%s final=%.1f",
                                    reason_prefix, ai_score, ai_reason, final_score)
