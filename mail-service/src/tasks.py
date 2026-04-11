@@ -35,6 +35,9 @@ DEFAULT_SETTINGS = [
     ("score_rspamd_weight", 0.6, "ai", "Weight of rspamd score in final calculation (0.0-1.0). AI weight = 1 - this value."),
     ("ai_confidence_threshold", 6.0, "ai", "AI score threshold for 'high confidence'. Above this, AI is not diluted by low rspamd score."),
     ("ai_floor_offset", 1.0, "ai", "When AI is confident: final_score = max(weighted, ai_score - this offset)"),
+    ("reject_auth_failures", True, "scanning", "Penalize missing rDNS, DKIM, SPF (score boost for unauthenticated senders)"),
+    ("reject_no_rdns", False, "scanning", "Hard-reject mail from servers without reverse DNS (PTR record)"),
+    ("reject_no_spf", False, "scanning", "Hard-reject mail from domains without SPF or with SPF fail"),
 ]
 
 

@@ -229,19 +229,58 @@ class ContentFilterHandler:
                     list_adj = self._check_mailing_list(parsed)
                     final_score += list_adj
 
+                    # Fake bounce detection: empty sender without real DSN
+                    fake_bounce_adj = self._check_fake_bounce(parsed, mail_from)
+                    final_score += fake_bounce_adj
+
+                    # Multi-recipient detection: same mail to many mailboxes
+                    multi_rcpt_adj = self._check_multi_recipient(rcpt_to)
+                    final_score += multi_rcpt_adj
+
+                    # Check sender auth (rDNS, DKIM, SPF) - may hard-reject
+                    auth_result = await self._check_sender_auth(
+                        db, rspamd_symbols, mail_from, client_ip, log_extras={
+                            "message_id": message_id, "subject": subject,
+                            "direction": direction, "client_ip": client_ip,
+                            "size_bytes": len(raw_message), "rspamd_score": rspamd_score,
+                            "rspamd_symbols": rspamd_symbols or None,
+                            "processing_time_ms": int((time.monotonic() - start) * 1000),
+                        }
+                    )
+                    if isinstance(auth_result, str):
+                        # Hard rejection - log and return
+                        log_entry = MailLog(
+                            message_id=message_id, mail_from=mail_from,
+                            rcpt_to=rcpt_to, subject=subject, direction=direction,
+                            client_ip=client_ip, size_bytes=len(raw_message),
+                            rspamd_score=rspamd_score, final_score=99.0,
+                            rspamd_symbols=rspamd_symbols or None,
+                            action="rejected",
+                            processing_time_ms=int((time.monotonic() - start) * 1000),
+                        )
+                        db.add(log_entry)
+                        await self._update_stats(db, "inbound", "rejected")
+                        await db.commit()
+                        return auth_result
+                    final_score += auth_result
+
                 # Check if sender is known (first-time sender detection)
                 is_first_sender = False
                 force_ai = False
-                if not is_outgoing and mail_from:
-                    is_first_sender = await self._track_sender(db, mail_from, final_score)
-                    if is_first_sender:
-                        # Check if "AI scan first sender" setting is enabled
-                        ai_first_result = await db.execute(
-                            select(Setting).where(Setting.key == "ai_scan_first_sender")
-                        )
-                        ai_first_setting = ai_first_result.scalar_one_or_none()
-                        if ai_first_setting and (ai_first_setting.value is True or ai_first_setting.value == "true"):
-                            force_ai = True
+                if not is_outgoing:
+                    if mail_from:
+                        is_first_sender = await self._track_sender(db, mail_from, final_score)
+                        if is_first_sender:
+                            # Check if "AI scan first sender" setting is enabled
+                            ai_first_result = await db.execute(
+                                select(Setting).where(Setting.key == "ai_scan_first_sender")
+                            )
+                            ai_first_setting = ai_first_result.scalar_one_or_none()
+                            if ai_first_setting and (ai_first_setting.value is True or ai_first_setting.value == "true"):
+                                force_ai = True
+                    elif not mail_from:
+                        # Empty sender (bounce) - force AI if it looks suspicious
+                        force_ai = fake_bounce_adj > 0
 
                 # AI classification: grey zone OR first-time sender
                 ai_score = None
@@ -351,6 +390,125 @@ class ContentFilterHandler:
             except Exception:
                 logger.exception("Re-injection also failed")
             return "250 OK (error fallback)"
+
+    def _check_fake_bounce(self, parsed_msg, mail_from: str) -> float:
+        """Detect fake bounces: empty envelope sender without real DSN content."""
+        if mail_from:
+            return 0.0
+
+        # Real DSN/bounce messages have Content-Type: multipart/report
+        content_type = str(parsed_msg.get("Content-Type", "")).lower()
+        if "multipart/report" in content_type or "delivery-status" in content_type:
+            return 0.0
+
+        # Also allow auto-replies (Auto-Submitted header)
+        auto_submitted = str(parsed_msg.get("Auto-Submitted", "")).lower()
+        if auto_submitted and auto_submitted != "no":
+            return 0.0
+
+        # Empty sender + no DSN = suspicious fake bounce / phishing
+        logger.info("Fake bounce detected: empty sender without DSN content type")
+        return 5.0
+
+    def _check_multi_recipient(self, rcpt_to: list[str]) -> float:
+        """Score boost when the same mail targets multiple mailboxes."""
+        if len(rcpt_to) <= 1:
+            return 0.0
+
+        # Count unique local parts (different mailboxes)
+        unique_locals = set()
+        for addr in rcpt_to:
+            local = addr.split("@")[0].lower() if "@" in addr else addr.lower()
+            unique_locals.add(local)
+
+        if len(unique_locals) <= 1:
+            return 0.0
+
+        # +1.5 per extra recipient (2 recipients = +1.5, 3 = +3.0, etc.)
+        adj = (len(unique_locals) - 1) * 1.5
+        logger.info("Multi-recipient mail: %d unique mailboxes → +%.1f score",
+                     len(unique_locals), adj)
+        return adj
+
+    async def _check_sender_auth(self, session, rspamd_symbols: dict,
+                                 mail_from: str, client_ip: str,
+                                 log_extras: dict = None) -> float | str:
+        """Check rspamd symbols for missing rDNS, DKIM, SPF.
+
+        Returns a float score adjustment, or a '550 ...' rejection string
+        if hard-reject is enabled for the failing check.
+        """
+        # Load all auth settings at once
+        auth_keys = [
+            "reject_auth_failures", "reject_no_rdns", "reject_no_spf",
+        ]
+        result = await session.execute(
+            select(Setting).where(Setting.key.in_(auth_keys))
+        )
+        cfg = {}
+        for s in result.scalars():
+            cfg[s.key] = s.value is True or s.value == "true"
+
+        if not cfg.get("reject_auth_failures", True):
+            return 0.0
+
+        hard_reject_rdns = cfg.get("reject_no_rdns", False)
+        hard_reject_spf = cfg.get("reject_no_spf", False)
+
+        # --- Hard rejections (before scoring) ---
+
+        has_no_rdns = "RDNS_NONE" in rspamd_symbols or "HFILTER_HOSTNAME_UNKNOWN" in rspamd_symbols
+        spf_fail = "R_SPF_FAIL" in rspamd_symbols
+        spf_none = "R_SPF_NA" in rspamd_symbols
+
+        if hard_reject_rdns and has_no_rdns:
+            logger.warning("REJECTED: no reverse DNS from %s for <%s>", client_ip, mail_from)
+            return f"550 5.7.25 Rejected: sending server {client_ip} has no reverse DNS (rDNS). Configure a valid PTR record."
+
+        if hard_reject_spf and spf_fail:
+            sender_domain = mail_from.split("@")[1] if "@" in mail_from else "unknown"
+            logger.warning("REJECTED: SPF hard fail from %s for <%s>", client_ip, mail_from)
+            return f"550 5.7.23 Rejected: SPF validation failed for {sender_domain}. The sending server is not authorized."
+
+        if hard_reject_spf and spf_none and mail_from:
+            sender_domain = mail_from.split("@")[1] if "@" in mail_from else "unknown"
+            logger.warning("REJECTED: no SPF record from %s for <%s>", client_ip, mail_from)
+            return f"550 5.7.23 Rejected: no SPF record found for {sender_domain}. Add an SPF DNS record."
+
+        # --- Soft scoring (score adjustments) ---
+        adj = 0.0
+
+        # No reverse DNS
+        if has_no_rdns:
+            adj += 4.0
+            logger.info("No reverse DNS for sender → +4.0")
+
+        # SPF fail
+        if spf_fail:
+            adj += 3.0
+            logger.info("SPF hard fail → +3.0")
+        elif "R_SPF_SOFTFAIL" in rspamd_symbols:
+            adj += 1.5
+            logger.info("SPF soft fail → +1.5")
+        elif spf_none:
+            adj += 1.0
+            logger.info("No SPF record → +1.0")
+
+        # DKIM fail or missing
+        if "R_DKIM_REJECT" in rspamd_symbols:
+            adj += 3.0
+            logger.info("DKIM signature failed → +3.0")
+        elif "DKIM_NONE" in rspamd_symbols or "R_DKIM_NA" in rspamd_symbols:
+            adj += 1.0
+            logger.info("No DKIM signature → +1.0")
+
+        # Combined: no rDNS + no SPF + no DKIM = very suspicious
+        has_no_dkim = "DKIM_NONE" in rspamd_symbols or "R_DKIM_NA" in rspamd_symbols or "R_DKIM_REJECT" in rspamd_symbols
+        if has_no_rdns and (spf_fail or spf_none) and has_no_dkim:
+            adj += 3.0
+            logger.info("No rDNS + no SPF + no DKIM → extra +3.0 (unauthenticated sender)")
+
+        return adj
 
     def _check_mailing_list(self, parsed_msg) -> float:
         """Check for Google Groups and mailing list headers, return score adjustment."""

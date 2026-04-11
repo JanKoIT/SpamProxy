@@ -323,6 +323,39 @@ export default function SecurityPage() {
           onToggle={handleToggle}
         />
 
+        {/* Sender Auth Enforcement */}
+        <ToggleCard
+          icon={<Shield className="h-5 w-5 text-cyan-400" />}
+          title="Sender Authentication Scoring"
+          description="Penalizes mail from servers without reverse DNS, DKIM or SPF. Missing rDNS +4.0, SPF fail +3.0, DKIM fail +3.0, all missing +3.0 extra."
+          settingKey="reject_auth_failures"
+          value={boolVal("reject_auth_failures")}
+          loading={savingKey === "reject_auth_failures"}
+          onToggle={handleToggle}
+        />
+
+        {/* Hard reject: no rDNS */}
+        <ToggleCard
+          icon={<Globe className="h-5 w-5 text-red-400" />}
+          title="Reject: No Reverse DNS"
+          description="Hard-reject mail from servers without reverse DNS (PTR record). Legitimate mail servers always have rDNS configured."
+          settingKey="reject_no_rdns"
+          value={boolVal("reject_no_rdns")}
+          loading={savingKey === "reject_no_rdns"}
+          onToggle={handleToggle}
+        />
+
+        {/* Hard reject: no SPF */}
+        <ToggleCard
+          icon={<Shield className="h-5 w-5 text-red-400" />}
+          title="Reject: No SPF / SPF Fail"
+          description="Hard-reject mail from domains without SPF record or with SPF hard fail. Warning: some smaller domains may not have SPF configured."
+          settingKey="reject_no_spf"
+          value={boolVal("reject_no_spf")}
+          loading={savingKey === "reject_no_spf"}
+          onToggle={handleToggle}
+        />
+
         {/* DKIM Signing */}
         <ToggleCard
           icon={<Key className="h-5 w-5 text-blue-400" />}
