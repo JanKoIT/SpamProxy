@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from email.policy import default as default_policy
 from uuid import UUID
 
+import httpx
 import smtplib
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,25 @@ from ..config import settings
 from .models import Quarantine, MailLog, Domain
 
 logger = logging.getLogger(__name__)
+
+
+async def _rspamd_learn(raw_message: bytes, learn_type: str) -> None:
+    """Teach rspamd that a message is spam or ham."""
+    endpoint = "learnspam" if learn_type == "spam" else "learnham"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            headers = {}
+            if settings.rspamd_password:
+                headers["Password"] = settings.rspamd_password
+            resp = await client.post(
+                f"{settings.rspamd_controller_url}/{endpoint}",
+                content=raw_message,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            logger.info("rspamd %s learned successfully", learn_type)
+    except Exception as e:
+        logger.warning("rspamd %s learn failed: %s", learn_type, e)
 
 
 class QuarantineManager:
@@ -81,6 +101,10 @@ class QuarantineManager:
 
         await self.session.commit()
         logger.info("Released quarantined message %s", quarantine_id)
+
+        # Learn as ham in rspamd (approved = not spam)
+        await _rspamd_learn(entry.raw_message, "ham")
+
         return True
 
     async def reject(self, quarantine_id: UUID, reviewer_id: UUID | None = None) -> bool:
@@ -96,6 +120,10 @@ class QuarantineManager:
         entry.reviewed_at = datetime.now(timezone.utc)
         await self.session.commit()
         logger.info("Rejected quarantined message %s", quarantine_id)
+
+        # Learn as spam in rspamd (rejected = confirmed spam)
+        await _rspamd_learn(entry.raw_message, "spam")
+
         return True
 
     async def cleanup_expired(self) -> int:
