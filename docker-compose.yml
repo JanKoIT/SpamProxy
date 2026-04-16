@@ -77,6 +77,14 @@ services:
         condition: service_started
       unbound:
         condition: service_started
+    # Healthcheck: ensures milter port 11332 is responsive. Docker will
+    # auto-restart the container if it hangs (e.g. DNS/RBL stall).
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/11332' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     # Ports nur intern - rspamd WebUI via Nginx oder: docker compose exec rspamd rspamadm ...
 
   postfix:
@@ -103,7 +111,7 @@ services:
       postgres:
         condition: service_healthy
       rspamd:
-        condition: service_started
+        condition: service_healthy
       mail-service:
         condition: service_started
 
