@@ -226,7 +226,9 @@ class ContentFilterHandler:
                     final_score += keyword_adj
 
                     # Apply mailing list / Google Groups scoring
-                    list_adj = self._check_mailing_list(parsed)
+                    list_adj = self._check_mailing_list(
+                        parsed, mail_from, client_ip, rspamd_symbols
+                    )
                     final_score += list_adj
 
                     # Fake bounce detection: empty sender without real DSN
@@ -510,14 +512,20 @@ class ContentFilterHandler:
 
         return adj
 
-    def _check_mailing_list(self, parsed_msg) -> float:
+    def _check_mailing_list(self, parsed_msg, mail_from: str = "",
+                             client_ip: str = "",
+                             rspamd_symbols: dict | None = None) -> float:
         """Check for Google Groups and mailing list headers, return score adjustment."""
         score = 0.0
+        rspamd_symbols = rspamd_symbols or {}
 
         is_google_group = False
+        is_google_infra = False
         is_mailing_list = False
 
-        # Google Groups detection
+        # --- Google Groups / Google mailer infrastructure detection ---
+
+        # 1. Explicit Google Groups headers
         if parsed_msg.get("X-Google-Group-Id"):
             is_google_group = True
         list_unsub = str(parsed_msg.get("List-Unsubscribe", "")).lower()
@@ -527,6 +535,35 @@ class ContentFilterHandler:
         if "googlegroups" in list_post:
             is_google_group = True
 
+        # 2. Google Groups bounce-classifier envelope pattern (e.g. +bncBDK...)
+        if mail_from and "+bnc" in mail_from.lower():
+            is_google_group = True
+            logger.info("Google Groups +bnc envelope pattern: %s", mail_from)
+
+        # 3. Client IP in Google's mail sending ranges
+        if client_ip:
+            google_prefixes = (
+                "209.85.", "64.233.", "66.102.", "66.249.",
+                "72.14.", "74.125.", "108.177.", "172.217.",
+                "173.194.", "216.58.", "216.239.",
+            )
+            if any(client_ip.startswith(p) for p in google_prefixes):
+                is_google_infra = True
+
+        # 4. Message-ID from Google mailer but From is not Gmail
+        msg_id = str(parsed_msg.get("Message-ID", "")).lower()
+        from_header = str(parsed_msg.get("From", "")).lower()
+        if "mail.gmail.com" in msg_id and "gmail.com" not in from_header \
+                and "googlemail.com" not in from_header:
+            is_google_infra = True
+            logger.info("Google mailer Message-ID with non-Gmail From")
+
+        # 5. rspamd forged maillist symbols are strong spam indicators
+        forged_maillist = (
+            "FORGED_SENDER_MAILLIST" in rspamd_symbols
+            or "FORGED_RECIPIENTS_MAILLIST" in rspamd_symbols
+        )
+
         # General mailing list detection
         if parsed_msg.get("List-Id") or parsed_msg.get("List-Unsubscribe"):
             is_mailing_list = True
@@ -534,21 +571,36 @@ class ContentFilterHandler:
         if precedence in ("bulk", "list"):
             is_mailing_list = True
 
-        # Google Groups + freemail sender = very likely spam
-        if is_google_group:
-            from_header = str(parsed_msg.get("From", "")).lower()
+        # --- Scoring ---
+
+        if is_google_group or is_google_infra:
             freemail_domains = [
                 "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
                 "mail.ru", "yandex.ru", "qq.com", "163.com", "aol.com",
-                "protonmail.com", "icloud.com",
+                "protonmail.com", "icloud.com", "googlemail.com",
             ]
-            for domain in freemail_domains:
-                if domain in from_header:
-                    score += 6.0  # Google Groups + freemail = spam
-                    logger.info("Google Groups spam detected (freemail sender)")
-                    break
+            is_freemail = any(d in from_header for d in freemail_domains)
+
+            if is_freemail:
+                score += 6.0
+                logger.info("Google Groups spam: freemail sender → +6.0")
+            elif forged_maillist:
+                # Forged sender on Google infra = almost certainly spam
+                score += 6.0
+                logger.info("Google infra + forged maillist symbols → +6.0")
+            elif is_google_group:
+                # Explicit Google Groups from non-freemail, still suspicious
+                score += 3.0
+                logger.info("Google Groups (non-freemail) → +3.0")
             else:
-                score += 2.0  # Google Groups from non-freemail, still suspicious
+                # Google infra only (no explicit Group headers) - moderate
+                score += 1.5
+                logger.info("Google mailer infrastructure → +1.5")
+
+        # Forged mailing list headers without Google Groups (rare but spammy)
+        elif forged_maillist:
+            score += 4.0
+            logger.info("Forged mailing list headers → +4.0")
 
         # Bulk mail without proper List-Id
         if precedence == "bulk" and not parsed_msg.get("List-Id"):
