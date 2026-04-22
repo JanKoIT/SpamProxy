@@ -95,9 +95,26 @@ async def system_status():
                 "detail": "redis reachable" if ok else "redis unreachable"}
 
     async def check_clamav() -> dict:
-        ok = await check_tcp("clamav", 3310)
-        return {"status": "ok" if ok else "error",
-                "detail": "clamav reachable" if ok else "clamav unreachable"}
+        # ClamAV PING/PONG protocol verifies the daemon is actually ready
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection("clamav", 3310), timeout=3.0
+            )
+            writer.write(b"nPING\n")
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(64), timeout=3.0)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            if b"PONG" in data:
+                return {"status": "ok", "detail": "clamav responding"}
+            return {"status": "degraded",
+                    "detail": f"clamav unexpected reply: {data[:32]!r}"}
+        except Exception as e:
+            return {"status": "error",
+                    "detail": f"clamav unreachable: {type(e).__name__}"}
 
     async def check_postfix() -> dict:
         ok = await check_tcp("postfix", 25)
@@ -105,9 +122,22 @@ async def system_status():
                 "detail": "postfix SMTP reachable" if ok else "postfix SMTP unreachable"}
 
     async def check_unbound() -> dict:
-        ok = await check_tcp("unbound", 53)
-        return {"status": "ok" if ok else "error",
-                "detail": "unbound DNS reachable" if ok else "unbound DNS unreachable"}
+        # Real DNS query against unbound (UDP 53; TCP is not always enabled)
+        def _resolve():
+            import dns.resolver
+            unbound_ip = socket.gethostbyname("unbound")
+            resolver = dns.resolver.Resolver(configure=False)
+            resolver.nameservers = [unbound_ip]
+            resolver.timeout = 3.0
+            resolver.lifetime = 3.0
+            resolver.resolve("dns.google", "A")
+            return True
+        try:
+            await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=5.0)
+            return {"status": "ok", "detail": "unbound DNS resolving"}
+        except Exception as e:
+            return {"status": "error",
+                    "detail": f"unbound DNS query failed: {type(e).__name__}"}
 
     async def check_ai() -> dict:
         if not settings.ai_enabled:
