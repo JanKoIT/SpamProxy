@@ -77,12 +77,13 @@ services:
         condition: service_started
       unbound:
         condition: service_started
-    # Healthcheck: ensures milter port 11332 is responsive. Docker will
-    # auto-restart the container if it hangs (e.g. DNS/RBL stall).
+    # Healthcheck: HTTP ping to rspamd controller. If it hangs (DNS/RBL stall),
+    # Docker auto-restarts. Plain TCP open isn't enough - rspamd can accept
+    # connections but stall on scanning.
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/11332' || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "timeout 5 rspamadm control stat >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 8s
       retries: 3
       start_period: 30s
     # Ports nur intern - rspamd WebUI via Nginx oder: docker compose exec rspamd rspamadm ...

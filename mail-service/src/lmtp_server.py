@@ -11,7 +11,7 @@ from aiosmtpd.lmtp import LMTP
 
 from .config import settings
 from .db import async_session
-from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule, Setting
+from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule, Setting, Domain
 from .quarantine.manager import QuarantineManager
 from .scanning.ai_classifier import AIClassifier
 from sqlalchemy import select
@@ -208,6 +208,32 @@ class ContentFilterHandler:
             # Apply whitelist/blacklist and scoring rules
             final_score = rspamd_score
             async with async_session() as db:
+                # Spoofing detection: inbound mail claiming to be from a local domain
+                # is always spoofing (legit outbound uses SASL auth on port 587).
+                if not is_outgoing and mail_from and "@" in mail_from:
+                    sender_domain = mail_from.split("@")[1].lower()
+                    local_dom = await db.execute(
+                        select(Domain).where(Domain.domain == sender_domain)
+                    )
+                    if local_dom.scalar_one_or_none():
+                        logger.warning(
+                            "REJECTED: inbound mail spoofing local domain %s from %s",
+                            sender_domain, client_ip,
+                        )
+                        log_entry = MailLog(
+                            message_id=message_id, mail_from=mail_from,
+                            rcpt_to=rcpt_to, subject=subject, direction="inbound",
+                            client_ip=client_ip, size_bytes=len(raw_message),
+                            rspamd_score=rspamd_score, final_score=99.0,
+                            rspamd_symbols=rspamd_symbols or None,
+                            action="rejected",
+                            processing_time_ms=int((time.monotonic() - start) * 1000),
+                        )
+                        db.add(log_entry)
+                        await self._update_stats(db, "inbound", "rejected")
+                        await db.commit()
+                        return f"550 5.7.1 Rejected: inbound mail claiming local domain {sender_domain} from external IP {client_ip}. Use authenticated submission (port 587) for outgoing mail."
+
                 if not is_outgoing:
                     access_action = await self._check_access_lists(db, mail_from, client_ip)
                     if access_action == "whitelist":

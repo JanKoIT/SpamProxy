@@ -64,15 +64,16 @@ smtpd_recipient_restrictions =
 smtpd_milters = inet:rspamd:11332
 non_smtpd_milters = $smtpd_milters
 milter_protocol = 6
-milter_default_action = accept
+# tempfail: if rspamd is down, return 451 so remote MTAs retry later
+# instead of delivering unscanned mail. The content filter still has
+# its own checks, but rspamd symbols are essential for quality scoring.
+milter_default_action = tempfail
 milter_mail_macros = i {mail_addr} {client_addr} {client_name} {auth_authen}
 
 # Milter timeouts: fail fast if rspamd hangs (default is 300s).
-# milter_default_action=accept means a timed-out scan still delivers,
-# but content filter still runs (mail-service does post-scan checks).
-milter_connect_timeout = 10s
-milter_command_timeout = 30s
-milter_content_timeout = 60s
+milter_connect_timeout = 5s
+milter_command_timeout = 15s
+milter_content_timeout = 30s
 
 # Content filter - ALL mail goes through mail-service for logging + quarantine
 content_filter = scan:mail-service:8024
