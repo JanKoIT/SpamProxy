@@ -41,6 +41,114 @@ async def health():
     return {"status": "ok", "service": "mail-service"}
 
 
+@app.get("/api/system-status")
+async def system_status():
+    """Check health of all SpamProxy services."""
+    import asyncio
+    import socket
+    import httpx as _httpx
+
+    async def check_tcp(host: str, port: int, timeout: float = 3.0) -> bool:
+        try:
+            fut = asyncio.open_connection(host, port)
+            reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    async def check_rspamd() -> dict:
+        # Controller HTTP ping (functional check, not just TCP)
+        try:
+            async with _httpx.AsyncClient(timeout=5.0) as c:
+                headers = {}
+                if settings.rspamd_password:
+                    headers["Password"] = settings.rspamd_password
+                r = await c.get(f"{settings.rspamd_controller_url}/ping", headers=headers)
+                if r.status_code == 200:
+                    # Also verify milter port is open
+                    milter_ok = await check_tcp("rspamd", 11332)
+                    return {
+                        "status": "ok" if milter_ok else "degraded",
+                        "detail": "rspamd controller responsive"
+                                 + ("" if milter_ok else ", but milter port 11332 unreachable"),
+                    }
+                return {"status": "error", "detail": f"controller HTTP {r.status_code}"}
+        except Exception as e:
+            return {"status": "error", "detail": f"rspamd unreachable: {type(e).__name__}"}
+
+    async def check_postgres() -> dict:
+        try:
+            async with async_session() as db:
+                await db.execute(text("SELECT 1"))
+            return {"status": "ok", "detail": "database responsive"}
+        except Exception as e:
+            return {"status": "error", "detail": f"db error: {type(e).__name__}"}
+
+    async def check_redis() -> dict:
+        ok = await check_tcp("redis", 6379)
+        return {"status": "ok" if ok else "error",
+                "detail": "redis reachable" if ok else "redis unreachable"}
+
+    async def check_clamav() -> dict:
+        ok = await check_tcp("clamav", 3310)
+        return {"status": "ok" if ok else "error",
+                "detail": "clamav reachable" if ok else "clamav unreachable"}
+
+    async def check_postfix() -> dict:
+        ok = await check_tcp("postfix", 25)
+        return {"status": "ok" if ok else "error",
+                "detail": "postfix SMTP reachable" if ok else "postfix SMTP unreachable"}
+
+    async def check_unbound() -> dict:
+        ok = await check_tcp("unbound", 53)
+        return {"status": "ok" if ok else "error",
+                "detail": "unbound DNS reachable" if ok else "unbound DNS unreachable"}
+
+    async def check_ai() -> dict:
+        if not settings.ai_enabled:
+            return {"status": "disabled", "detail": "AI classification disabled"}
+        if not settings.ai_api_key and settings.ai_provider == "openai":
+            return {"status": "error", "detail": "OpenAI API key not configured"}
+        return {"status": "ok", "detail": f"AI provider: {settings.ai_provider} ({settings.ai_model})"}
+
+    # Run all checks in parallel
+    results = await asyncio.gather(
+        check_rspamd(), check_postgres(), check_redis(),
+        check_clamav(), check_postfix(), check_unbound(), check_ai(),
+        return_exceptions=True,
+    )
+    names = ["rspamd", "postgres", "redis", "clamav", "postfix", "unbound", "ai"]
+    services = {}
+    for name, result in zip(names, results):
+        if isinstance(result, Exception):
+            services[name] = {"status": "error", "detail": f"check failed: {type(result).__name__}"}
+        else:
+            services[name] = result
+
+    # Overall status: error if any critical service is down
+    critical = ["rspamd", "postgres", "postfix"]
+    has_error = any(services[s].get("status") == "error" for s in critical)
+    has_degraded = any(services[s].get("status") in ("error", "degraded") for s in services)
+
+    if has_error:
+        overall = "error"
+    elif has_degraded:
+        overall = "degraded"
+    else:
+        overall = "ok"
+
+    return {
+        "overall": overall,
+        "services": services,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # --- Direct Learn Endpoint (for Dovecot/external scripts) ---
 
 @app.post("/api/learn/{learn_type}")

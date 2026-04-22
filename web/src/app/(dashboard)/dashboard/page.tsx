@@ -4,6 +4,7 @@ import { apiFetch } from "@/hooks/use-demo-fetch";
 import { useEffect, useState, useCallback } from "react";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { MailVolumeChart } from "@/components/dashboard/mail-volume-chart";
+import { SystemStatusCard } from "@/components/dashboard/system-status";
 import { RefreshCw, Loader2 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -36,8 +37,12 @@ export default function DashboardPage() {
 
   if (!stats) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-white">SpamProxy Dashboard</h1>
+        <SystemStatusCard />
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+        </div>
       </div>
     );
   }
@@ -61,6 +66,8 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      <SystemStatusCard />
 
       <StatsCards
         totalToday={stats.total_today}
