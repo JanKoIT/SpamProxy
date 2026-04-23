@@ -46,6 +46,7 @@ async def system_status():
     """Check health of all SpamProxy services."""
     import asyncio
     import socket
+    import struct
     import httpx as _httpx
 
     async def check_tcp(host: str, port: int, timeout: float = 3.0) -> bool:
@@ -61,25 +62,55 @@ async def system_status():
         except Exception:
             return False
 
+    async def check_milter_handshake(host: str, port: int, timeout: float = 3.0) -> tuple[bool, str]:
+        """Perform SMFIC_OPTNEG handshake to verify milter is actually responsive."""
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=timeout
+            )
+            # SMFIC_OPTNEG: command 'O' + version(6) + actions(0x1FF) + protocol(0x3FFFFF)
+            payload = b"O" + struct.pack(">III", 6, 0x1FF, 0x3FFFFF)
+            packet = struct.pack(">I", len(payload)) + payload
+            writer.write(packet)
+            await writer.drain()
+            # Read reply length prefix (4 bytes) then payload
+            hdr = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
+            reply_len = struct.unpack(">I", hdr)[0]
+            if reply_len == 0 or reply_len > 1024:
+                return False, f"invalid milter reply length {reply_len}"
+            reply = await asyncio.wait_for(reader.readexactly(reply_len), timeout=timeout)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            if reply[:1] == b"O":
+                return True, "milter handshake ok"
+            return False, f"unexpected milter reply command: {reply[:1]!r}"
+        except asyncio.TimeoutError:
+            return False, "milter handshake timeout (worker hung)"
+        except Exception as e:
+            return False, f"milter handshake failed: {type(e).__name__}"
+
     async def check_rspamd() -> dict:
-        # Controller HTTP ping (functional check, not just TCP)
+        # 1. Controller HTTP ping
         try:
             async with _httpx.AsyncClient(timeout=5.0) as c:
                 headers = {}
                 if settings.rspamd_password:
                     headers["Password"] = settings.rspamd_password
                 r = await c.get(f"{settings.rspamd_controller_url}/ping", headers=headers)
-                if r.status_code == 200:
-                    # Also verify milter port is open
-                    milter_ok = await check_tcp("rspamd", 11332)
-                    return {
-                        "status": "ok" if milter_ok else "degraded",
-                        "detail": "rspamd controller responsive"
-                                 + ("" if milter_ok else ", but milter port 11332 unreachable"),
-                    }
-                return {"status": "error", "detail": f"controller HTTP {r.status_code}"}
+                if r.status_code != 200:
+                    return {"status": "error", "detail": f"controller HTTP {r.status_code}"}
         except Exception as e:
-            return {"status": "error", "detail": f"rspamd unreachable: {type(e).__name__}"}
+            return {"status": "error", "detail": f"rspamd controller unreachable: {type(e).__name__}"}
+
+        # 2. Real milter handshake (catches stuck scanner workers)
+        milter_ok, milter_detail = await check_milter_handshake("rspamd", 11332)
+        if not milter_ok:
+            return {"status": "error",
+                    "detail": f"controller ok but milter broken: {milter_detail}"}
+        return {"status": "ok", "detail": "controller + milter responsive"}
 
     async def check_postgres() -> dict:
         try:
@@ -122,19 +153,35 @@ async def system_status():
                 "detail": "postfix SMTP reachable" if ok else "postfix SMTP unreachable"}
 
     async def check_unbound() -> dict:
-        # Real DNS query against unbound (UDP 53; TCP is not always enabled)
-        def _resolve():
+        # Resolve "unbound" hostname via Docker DNS, then issue a real
+        # DNS query against that IP. socket.gethostbyname can fail in
+        # async contexts - use asyncio's getaddrinfo instead.
+        try:
+            loop = asyncio.get_running_loop()
+            addrinfo = await asyncio.wait_for(
+                loop.getaddrinfo("unbound", 53, type=socket.SOCK_DGRAM),
+                timeout=3.0,
+            )
+            if not addrinfo:
+                return {"status": "error", "detail": "unbound hostname did not resolve"}
+            unbound_ip = addrinfo[0][4][0]
+        except Exception as e:
+            return {"status": "error",
+                    "detail": f"cannot resolve unbound hostname: {type(e).__name__}"}
+
+        def _resolve(nameserver: str):
             import dns.resolver
-            unbound_ip = socket.gethostbyname("unbound")
             resolver = dns.resolver.Resolver(configure=False)
-            resolver.nameservers = [unbound_ip]
+            resolver.nameservers = [nameserver]
             resolver.timeout = 3.0
             resolver.lifetime = 3.0
             resolver.resolve("dns.google", "A")
             return True
         try:
-            await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=5.0)
-            return {"status": "ok", "detail": "unbound DNS resolving"}
+            await asyncio.wait_for(
+                asyncio.to_thread(_resolve, unbound_ip), timeout=5.0
+            )
+            return {"status": "ok", "detail": f"unbound DNS resolving ({unbound_ip})"}
         except Exception as e:
             return {"status": "error",
                     "detail": f"unbound DNS query failed: {type(e).__name__}"}

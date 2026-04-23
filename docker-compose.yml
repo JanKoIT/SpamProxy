@@ -77,15 +77,17 @@ services:
         condition: service_started
       unbound:
         condition: service_started
-    # Healthcheck: HTTP ping to rspamd controller. If it hangs (DNS/RBL stall),
-    # Docker auto-restarts. Plain TCP open isn't enough - rspamd can accept
-    # connections but stall on scanning.
+    # Healthcheck: real SMFIC_OPTNEG milter handshake. Catches cases where
+    # rspamd accepts TCP connections but scanner workers are hung - which
+    # is what Postfix sees as "can't read SMFIC_OPTNEG reply packet header".
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 rspamadm control stat >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "/milter-healthcheck.py"]
       interval: 20s
       timeout: 8s
       retries: 3
       start_period: 30s
+    labels:
+      - "autoheal=true"
     # Ports nur intern - rspamd WebUI via Nginx oder: docker compose exec rspamd rspamadm ...
 
   postfix:
@@ -167,6 +169,21 @@ services:
         condition: service_healthy
       mail-service:
         condition: service_started
+
+  # Auto-restart containers that become unhealthy.
+  # Listens to Docker events and restarts any container with label
+  # autoheal=true when its healthcheck reports unhealthy.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 60
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/localtime:/etc/localtime:ro
 
 volumes:
   postgres_data:
