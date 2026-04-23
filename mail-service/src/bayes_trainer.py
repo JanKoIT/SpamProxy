@@ -125,9 +125,12 @@ async def _learn_directory(directory: str, learn_type: str, max_messages: int = 
             except Exception:
                 pass
 
-            # Don't overwhelm rspamd
+            # Yield between requests so live traffic always has a free worker.
+            # 50ms per message caps throughput at ~20 req/s.
+            await asyncio.sleep(0.05)
+            # Longer breather every 50 messages
             if learned % 50 == 0 and learned > 0:
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
 
     return learned
 

@@ -1,3 +1,4 @@
+import asyncio
 import email
 import logging
 from datetime import datetime, timedelta, timezone
@@ -14,24 +15,30 @@ from .models import Quarantine, MailLog, Domain
 
 logger = logging.getLogger(__name__)
 
+# Cap concurrent learn requests to rspamd - auto-learning on every
+# rejected mail can otherwise pile up during spam bursts and starve
+# the controller worker.
+_LEARN_SEMAPHORE = asyncio.Semaphore(2)
+
 
 async def _rspamd_learn(raw_message: bytes, learn_type: str) -> None:
     """Teach rspamd that a message is spam or ham."""
     endpoint = "learnspam" if learn_type == "spam" else "learnham"
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            headers = {}
-            if settings.rspamd_password:
-                headers["Password"] = settings.rspamd_password
-            resp = await client.post(
-                f"{settings.rspamd_controller_url}/{endpoint}",
-                content=raw_message,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            logger.info("rspamd %s learned successfully", learn_type)
-    except Exception as e:
-        logger.warning("rspamd %s learn failed: %s", learn_type, e)
+    async with _LEARN_SEMAPHORE:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                headers = {}
+                if settings.rspamd_password:
+                    headers["Password"] = settings.rspamd_password
+                resp = await client.post(
+                    f"{settings.rspamd_controller_url}/{endpoint}",
+                    content=raw_message,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                logger.info("rspamd %s learned successfully", learn_type)
+        except Exception as e:
+            logger.warning("rspamd %s learn failed: %s", learn_type, e)
 
 
 class QuarantineManager:
