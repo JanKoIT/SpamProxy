@@ -12,14 +12,11 @@ from aiosmtpd.lmtp import LMTP
 from .config import settings
 from .db import async_session
 from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule, Setting, Domain
-from .quarantine.manager import QuarantineManager
+from .quarantine.manager import QuarantineManager, _rspamd_learn
 from .scanning.ai_classifier import AIClassifier
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
-
-QUARANTINE_THRESHOLD = settings.spam_quarantine_threshold
-REJECT_THRESHOLD = settings.spam_reject_threshold
 
 
 def parse_rspamd_score(parsed_msg) -> tuple[float, dict]:
@@ -353,14 +350,17 @@ class ContentFilterHandler:
                     mail_from.lower() == rcpt_to[0].lower()
                 ) if rcpt_to else False
 
-                if final_score >= REJECT_THRESHOLD:
-                    if final_score >= REJECT_THRESHOLD * 1.5 or is_spoofed_sender:
+                # Load thresholds dynamically from DB (editable via UI)
+                quar_thr, rej_thr, learn_rejected = await self._load_thresholds(db)
+
+                if final_score >= rej_thr:
+                    if final_score >= rej_thr * 1.5 or is_spoofed_sender:
                         # Very high score or spoofed From=To: silently discard
                         # No bounce = no backscatter = protects reputation
                         action = "discarded"
                     else:
                         action = "rejected"
-                elif final_score >= QUARANTINE_THRESHOLD:
+                elif final_score >= quar_thr:
                     action = "quarantined"
                 else:
                     action = "delivered"
@@ -394,6 +394,12 @@ class ContentFilterHandler:
                 "%s from=%s to=%s subject=%.60s score=%.1f",
                 action.upper(), mail_from, rcpt_to, subject, rspamd_score,
             )
+
+            # Auto-learn as spam if rejected/discarded (trains Bayes with
+            # high-confidence spam decisions). Fire-and-forget so we don't
+            # block SMTP response on rspamd learn endpoint.
+            if action in ("rejected", "discarded") and learn_rejected:
+                asyncio.create_task(_rspamd_learn(raw_message, "spam"))
 
             if action == "delivered":
                 await asyncio.to_thread(
@@ -688,6 +694,33 @@ class ContentFilterHandler:
                 total_adj += rule.score_adjustment
 
         return total_adj
+
+    async def _load_thresholds(self, session) -> tuple[float, float, bool]:
+        """Load quarantine/reject thresholds + auto-learn flag from DB."""
+        keys = ["spam_quarantine_threshold", "spam_reject_threshold",
+                "auto_learn_rejected_spam"]
+        defaults = {
+            "spam_quarantine_threshold": settings.spam_quarantine_threshold,
+            "spam_reject_threshold": settings.spam_reject_threshold,
+            "auto_learn_rejected_spam": True,
+        }
+        result = await session.execute(
+            select(Setting).where(Setting.key.in_(keys))
+        )
+        values = dict(defaults)
+        for s in result.scalars():
+            if s.key == "auto_learn_rejected_spam":
+                values[s.key] = s.value is True or s.value == "true"
+            else:
+                try:
+                    values[s.key] = float(s.value)
+                except (ValueError, TypeError):
+                    pass
+
+        # Sanity: reject threshold must be >= quarantine threshold
+        quar = values["spam_quarantine_threshold"]
+        rej = max(values["spam_reject_threshold"], quar)
+        return quar, rej, values["auto_learn_rejected_spam"]
 
     async def _load_weights(self, session) -> tuple[float, float, float]:
         """Load AI scoring weights from settings.

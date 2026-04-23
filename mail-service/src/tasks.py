@@ -38,6 +38,7 @@ DEFAULT_SETTINGS = [
     ("reject_auth_failures", True, "scanning", "Penalize missing rDNS, DKIM, SPF (score boost for unauthenticated senders)"),
     ("reject_no_rdns", False, "scanning", "Hard-reject mail from servers without reverse DNS (PTR record)"),
     ("reject_no_spf", False, "scanning", "Hard-reject mail from domains without SPF or with SPF fail"),
+    ("auto_learn_rejected_spam", True, "scanning", "Auto-teach rspamd Bayes: mails that were rejected or discarded as spam"),
 ]
 
 

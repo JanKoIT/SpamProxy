@@ -206,6 +206,12 @@ export default function SecurityPage() {
     return v === true || v === "true";
   }
 
+  function numVal(key: string, fallback: number): string {
+    const v = settings[key];
+    if (v === undefined || v === null || v === "") return String(fallback);
+    return String(v);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -234,6 +240,54 @@ export default function SecurityPage() {
       )}
 
       <div className="space-y-4">
+        {/* Scoring Thresholds */}
+        <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+          <div className="mb-3 flex items-start gap-4">
+            <Shield className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+            <div>
+              <h3 className="text-sm font-semibold text-white">Scoring Thresholds</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Final score at which mail is quarantined vs. rejected. Reject
+                must be higher than quarantine. Scores above reject×1.5 are
+                silently discarded to protect your reputation.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <InputCard
+              icon={<Shield className="h-4 w-4 text-yellow-400" />}
+              title="Quarantine Threshold"
+              description="Score ≥ this value → quarantined for user review"
+              settingKey="spam_quarantine_threshold"
+              value={numVal("spam_quarantine_threshold", 5.0)}
+              loading={savingKey === "spam_quarantine_threshold"}
+              onSave={handleSaveInput}
+              placeholder="5.0"
+            />
+            <InputCard
+              icon={<Shield className="h-4 w-4 text-red-400" />}
+              title="Reject Threshold"
+              description="Score ≥ this value → rejected (bounced)"
+              settingKey="spam_reject_threshold"
+              value={numVal("spam_reject_threshold", 10.0)}
+              loading={savingKey === "spam_reject_threshold"}
+              onSave={handleSaveInput}
+              placeholder="10.0"
+            />
+          </div>
+        </div>
+
+        {/* Auto-learn rejected as spam */}
+        <ToggleCard
+          icon={<Brain className="h-5 w-5 text-purple-400" />}
+          title="Auto-learn rejected mail as spam"
+          description="When mail is rejected or discarded, teach rspamd's Bayes classifier so future mails with similar patterns get caught earlier."
+          settingKey="auto_learn_rejected_spam"
+          value={boolVal("auto_learn_rejected_spam")}
+          loading={savingKey === "auto_learn_rejected_spam"}
+          onToggle={handleToggle}
+        />
+
         {/* Virus Scanning */}
         <ToggleCard
           icon={<Shield className="h-5 w-5 text-red-400" />}
