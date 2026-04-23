@@ -38,7 +38,50 @@ ai_classifier = AIClassifier()
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "mail-service"}
+    """Functional health check: verifies API, LMTP, and DB are responsive.
+
+    Used by Docker healthcheck. Returns 503 if any core sub-component
+    is hung so that autoheal restarts the container.
+    """
+    import asyncio
+    from fastapi.responses import JSONResponse
+
+    async def check_port(port: int, timeout: float = 2.0) -> bool:
+        try:
+            fut = asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    async def check_db() -> bool:
+        try:
+            async with async_session() as db:
+                await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=3.0)
+            return True
+        except Exception:
+            return False
+
+    lmtp_ok, db_ok = await asyncio.gather(check_port(8024), check_db())
+
+    if lmtp_ok and db_ok:
+        return {"status": "ok", "service": "mail-service",
+                "lmtp": "ok", "db": "ok"}
+
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "unhealthy",
+            "service": "mail-service",
+            "lmtp": "ok" if lmtp_ok else "down",
+            "db": "ok" if db_ok else "down",
+        },
+    )
 
 
 @app.get("/api/system-status")
