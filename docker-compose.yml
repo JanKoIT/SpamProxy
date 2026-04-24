@@ -77,14 +77,16 @@ services:
         condition: service_started
       unbound:
         condition: service_started
-    # Healthcheck: real SMFIC_OPTNEG milter handshake. Catches cases where
-    # rspamd accepts TCP connections but scanner workers are hung - which
-    # is what Postfix sees as "can't read SMFIC_OPTNEG reply packet header".
+    # Two-layer recovery:
+    # 1. In-container watchdog in entrypoint.sh kills rspamd within ~30s
+    #    of a stuck worker, so Docker's `restart: unless-stopped` takes over.
+    # 2. Docker healthcheck + autoheal as backup (in case the watchdog
+    #    itself gets stuck).
     healthcheck:
       test: ["CMD", "/milter-healthcheck.py"]
-      interval: 20s
-      timeout: 8s
-      retries: 3
+      interval: 10s
+      timeout: 4s
+      retries: 2
       start_period: 30s
     labels:
       - "autoheal=true"
@@ -198,7 +200,7 @@ services:
     restart: unless-stopped
     environment:
       AUTOHEAL_CONTAINER_LABEL: autoheal
-      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_INTERVAL: 10
       AUTOHEAL_START_PERIOD: 60
       TZ: ${TZ:-Europe/Berlin}
     volumes:
