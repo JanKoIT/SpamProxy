@@ -262,31 +262,34 @@ class ContentFilterHandler:
                     multi_rcpt_adj = self._check_multi_recipient(rcpt_to)
                     final_score += multi_rcpt_adj
 
-                    # Check sender auth (rDNS, DKIM, SPF) - may hard-reject
+                    # Check sender auth (rDNS, DKIM, SPF) - may discard hard
                     auth_result = await self._check_sender_auth(
-                        db, rspamd_symbols, mail_from, client_ip, log_extras={
-                            "message_id": message_id, "subject": subject,
-                            "direction": direction, "client_ip": client_ip,
-                            "size_bytes": len(raw_message), "rspamd_score": rspamd_score,
-                            "rspamd_symbols": rspamd_symbols or None,
-                            "processing_time_ms": int((time.monotonic() - start) * 1000),
-                        }
+                        db, rspamd_symbols, mail_from, client_ip,
                     )
-                    if isinstance(auth_result, str):
-                        # Hard rejection - log and return
+                    if isinstance(auth_result, tuple):
+                        # ("discard", reason) - silent drop, log as discarded.
+                        # 250 OK to Postfix so spammers can't probe; protects
+                        # reputation from backscatter to forged From: addresses.
+                        _, discard_reason = auth_result
                         log_entry = MailLog(
                             message_id=message_id, mail_from=mail_from,
                             rcpt_to=rcpt_to, subject=subject, direction=direction,
                             client_ip=client_ip, size_bytes=len(raw_message),
                             rspamd_score=rspamd_score, final_score=99.0,
                             rspamd_symbols=rspamd_symbols or None,
-                            action="rejected",
+                            action="discarded",
                             processing_time_ms=int((time.monotonic() - start) * 1000),
                         )
                         db.add(log_entry)
-                        await self._update_stats(db, "inbound", "rejected")
+                        await self._update_stats(db, "inbound", "discarded")
                         await db.commit()
-                        return auth_result
+                        # Auto-learn as spam if enabled
+                        _, _, learn_rejected = await self._load_thresholds(db)
+                        if learn_rejected:
+                            asyncio.create_task(_rspamd_learn(raw_message, "spam"))
+                        logger.info("DISCARDED auth-fail: %s from=%s ip=%s",
+                                    discard_reason, mail_from, client_ip)
+                        return "250 OK"
                     final_score += auth_result
 
                 # Check if sender is known (first-time sender detection)
@@ -465,12 +468,14 @@ class ContentFilterHandler:
         return adj
 
     async def _check_sender_auth(self, session, rspamd_symbols: dict,
-                                 mail_from: str, client_ip: str,
-                                 log_extras: dict = None) -> float | str:
+                                 mail_from: str, client_ip: str
+                                 ) -> "float | tuple[str, str]":
         """Check rspamd symbols for missing rDNS, DKIM, SPF.
 
-        Returns a float score adjustment, or a '550 ...' rejection string
-        if hard-reject is enabled for the failing check.
+        Returns a float score adjustment, or ('discard', reason) tuple
+        if hard-reject is enabled for the failing check. Hard rejection
+        is silent (250 OK + drop) to prevent backscatter to forged
+        From: addresses.
         """
         # Load all auth settings at once
         auth_keys = [
@@ -496,18 +501,15 @@ class ContentFilterHandler:
         spf_none = "R_SPF_NA" in rspamd_symbols
 
         if hard_reject_rdns and has_no_rdns:
-            logger.warning("REJECTED: no reverse DNS from %s for <%s>", client_ip, mail_from)
-            return f"550 5.7.25 Rejected: sending server {client_ip} has no reverse DNS (rDNS). Configure a valid PTR record."
+            return ("discard", f"no reverse DNS for {client_ip}")
 
         if hard_reject_spf and spf_fail:
             sender_domain = mail_from.split("@")[1] if "@" in mail_from else "unknown"
-            logger.warning("REJECTED: SPF hard fail from %s for <%s>", client_ip, mail_from)
-            return f"550 5.7.23 Rejected: SPF validation failed for {sender_domain}. The sending server is not authorized."
+            return ("discard", f"SPF hard fail for {sender_domain}")
 
         if hard_reject_spf and spf_none and mail_from:
             sender_domain = mail_from.split("@")[1] if "@" in mail_from else "unknown"
-            logger.warning("REJECTED: no SPF record from %s for <%s>", client_ip, mail_from)
-            return f"550 5.7.23 Rejected: no SPF record found for {sender_domain}. Add an SPF DNS record."
+            return ("discard", f"no SPF record for {sender_domain}")
 
         # --- Soft scoring (score adjustments) ---
         adj = 0.0

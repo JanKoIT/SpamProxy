@@ -388,22 +388,22 @@ export default function SecurityPage() {
           onToggle={handleToggle}
         />
 
-        {/* Hard reject: no rDNS */}
+        {/* Discard: no rDNS */}
         <ToggleCard
           icon={<Globe className="h-5 w-5 text-red-400" />}
-          title="Reject: No Reverse DNS"
-          description="Hard-reject mail from servers without reverse DNS (PTR record). Legitimate mail servers always have rDNS configured."
+          title="Discard: No Reverse DNS"
+          description="Silently drop mail from servers without reverse DNS (PTR record). No bounce is sent to prevent backscatter to forged From: addresses. Legitimate mail servers always have rDNS configured."
           settingKey="reject_no_rdns"
           value={boolVal("reject_no_rdns")}
           loading={savingKey === "reject_no_rdns"}
           onToggle={handleToggle}
         />
 
-        {/* Hard reject: no SPF */}
+        {/* Discard: no SPF */}
         <ToggleCard
           icon={<Shield className="h-5 w-5 text-red-400" />}
-          title="Reject: No SPF / SPF Fail"
-          description="Hard-reject mail from domains without SPF record or with SPF hard fail. Warning: some smaller domains may not have SPF configured."
+          title="Discard: No SPF / SPF Fail"
+          description="Silently drop mail from domains without SPF record or with SPF hard fail. No bounce sent. Warning: some smaller domains may not have SPF configured."
           settingKey="reject_no_spf"
           value={boolVal("reject_no_spf")}
           loading={savingKey === "reject_no_spf"}
