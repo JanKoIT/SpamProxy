@@ -39,6 +39,12 @@ DEFAULT_SETTINGS = [
     ("reject_no_rdns", False, "scanning", "Hard-reject mail from servers without reverse DNS (PTR record)"),
     ("reject_no_spf", False, "scanning", "Hard-reject mail from domains without SPF or with SPF fail"),
     ("auto_learn_rejected_spam", True, "scanning", "Auto-teach rspamd Bayes: mails that were rejected or discarded as spam"),
+    ("daily_report_enabled", True, "reports", "Send daily quarantine reports to recipients"),
+    ("daily_report_hour", 7, "reports", "Hour of day (0-23, local time) to send daily quarantine reports"),
+    ("daily_report_from", "spamproxy@example.com", "reports", "Sender address used in daily quarantine report emails"),
+    ("daily_report_subject", "Ihre Spam-Quarantäne: {count} neue Nachrichten", "reports", "Subject line. Placeholder: {count}"),
+    ("public_base_url", "https://spamproxy.example.com", "reports", "Base URL used in approve/reject links sent to recipients"),
+    ("report_token_secret", "", "reports", "HMAC secret for signing report links (auto-generated on first start)"),
 ]
 
 
@@ -98,17 +104,35 @@ async def ensure_tables():
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_known_senders_last ON known_senders(last_seen DESC)"
         ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS quarantine_recipients (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email VARCHAR(255) UNIQUE NOT NULL,
+                name VARCHAR(255),
+                daily_report_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                language VARCHAR(5) NOT NULL DEFAULT 'de',
+                last_report_sent_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_quarantine_recipients_email ON quarantine_recipients(LOWER(email))"
+        ))
         await session.commit()
         logger.info("Database tables verified")
 
 
 async def ensure_default_settings():
     """Insert any missing default settings into the database."""
+    import secrets as _secrets
     async with async_session() as session:
         inserted = 0
         for key, value, category, description in DEFAULT_SETTINGS:
             result = await session.execute(select(Setting).where(Setting.key == key))
             if not result.scalar_one_or_none():
+                # Auto-generate HMAC secret for report link signing
+                if key == "report_token_secret" and not value:
+                    value = _secrets.token_urlsafe(48)
                 session.add(Setting(key=key, value=value, category=category, description=description))
                 inserted += 1
         if inserted > 0:
@@ -125,12 +149,21 @@ async def start_background_tasks():
     except Exception:
         logger.exception("Failed startup tasks")
 
+    # Track which "day at hour H" we last sent daily reports for
+    last_report_day = None
+
     while True:
         try:
             await cleanup_expired_quarantine()
         except Exception:
             logger.exception("Background task error")
-        await asyncio.sleep(3600)  # Run every hour
+
+        try:
+            last_report_day = await maybe_send_daily_reports(last_report_day)
+        except Exception:
+            logger.exception("Daily report task error")
+
+        await asyncio.sleep(900)  # Run every 15 minutes (so report fires within 15min of target hour)
 
 
 async def cleanup_expired_quarantine():
@@ -140,3 +173,56 @@ async def cleanup_expired_quarantine():
         count = await qm.cleanup_expired()
         if count > 0:
             logger.info("Cleaned up %d expired quarantine entries", count)
+
+
+async def maybe_send_daily_reports(last_report_day):
+    """Send daily quarantine reports if we're at the configured hour
+    and haven't sent today yet. Returns the new last_report_day."""
+    from datetime import datetime as _dt
+    from sqlalchemy import select as _select
+    from .quarantine.models import QuarantineRecipient as _QR
+    from .quarantine.daily_report import send_report as _send_report
+
+    async with async_session() as session:
+        # Check feature flag
+        flag = await session.execute(
+            _select(Setting).where(Setting.key == "daily_report_enabled")
+        )
+        f = flag.scalar_one_or_none()
+        if not f or not (f.value is True or f.value == "true"):
+            return last_report_day
+
+        # Configured hour (default 7)
+        hour_row = await session.execute(
+            _select(Setting).where(Setting.key == "daily_report_hour")
+        )
+        h = hour_row.scalar_one_or_none()
+        try:
+            target_hour = int(h.value) if h else 7
+        except (ValueError, TypeError):
+            target_hour = 7
+
+        now = _dt.now()
+        if now.hour != target_hour:
+            return last_report_day
+        today_key = now.date().isoformat() + f"@{target_hour}"
+        if last_report_day == today_key:
+            return last_report_day
+
+        # Load recipients
+        result = await session.execute(
+            _select(_QR).where(_QR.daily_report_enabled.is_(True))
+        )
+        recipients = result.scalars().all()
+
+        sent_count = 0
+        for r in recipients:
+            try:
+                count = await _send_report(session, r)
+                if count > 0:
+                    sent_count += 1
+            except Exception:
+                logger.exception("Failed report for %s", r.email)
+
+        logger.info("Daily reports: sent to %d/%d recipients", sent_count, len(recipients))
+        return today_key

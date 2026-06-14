@@ -26,11 +26,13 @@ import {
   Inbox,
   Server,
   Activity,
+  UserCheck,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/quarantine", label: "Quarantine", icon: ShieldAlert },
+  { href: "/recipients", label: "Recipients", icon: UserCheck },
   { href: "/logs", label: "Mail Log", icon: Mail },
   { href: "/queue", label: "Mail Queue", icon: Inbox },
   { href: "/scan-history", label: "Scan History", icon: Activity },

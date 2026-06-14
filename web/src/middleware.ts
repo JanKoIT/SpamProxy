@@ -27,6 +27,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/quarantine/:path*",
+    "/recipients/:path*",
     "/logs/:path*",
     "/queue/:path*",
     "/scan-history/:path*",

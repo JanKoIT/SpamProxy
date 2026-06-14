@@ -15,8 +15,9 @@ from .quarantine.manager import QuarantineManager
 from .quarantine.models import (
     MailLog, Quarantine, StatsHourly, Domain, Setting, User,
     SmtpCredential, DkimKey, RblList, AccessList, ScoringRule, SenderDomain, KeywordRule,
-    RspamdPeer,
+    RspamdPeer, QuarantineRecipient,
 )
+from .quarantine.tokens import verify_token as _verify_qtoken
 from .scanning.ai_classifier import AIClassifier
 
 logger = logging.getLogger(__name__)
@@ -2795,3 +2796,152 @@ How it works:
         media_type="application/gzip",
         headers={"Content-Disposition": "attachment; filename=dovecot-sieve-kit.tar.gz"},
     )
+
+
+# --- Quarantine Recipients (end users who receive daily reports) ---
+
+class RecipientCreate(BaseModel):
+    email: str
+    name: str | None = None
+    daily_report_enabled: bool = True
+    language: str = "de"
+
+
+class RecipientUpdate(BaseModel):
+    name: str | None = None
+    daily_report_enabled: bool | None = None
+    language: str | None = None
+
+
+@app.get("/api/recipients")
+async def list_recipients():
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).order_by(QuarantineRecipient.email)
+        )
+        rows = result.scalars().all()
+        return {"recipients": [
+            {
+                "id": str(r.id),
+                "email": r.email,
+                "name": r.name,
+                "daily_report_enabled": r.daily_report_enabled,
+                "language": r.language,
+                "last_report_sent_at": r.last_report_sent_at.isoformat()
+                    if r.last_report_sent_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]}
+
+
+@app.post("/api/recipients")
+async def create_recipient(req: RecipientCreate):
+    email = req.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="invalid email")
+    async with async_session() as db:
+        existing = await db.execute(
+            select(QuarantineRecipient).where(QuarantineRecipient.email == email)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="recipient already exists")
+        r = QuarantineRecipient(
+            email=email,
+            name=req.name,
+            daily_report_enabled=req.daily_report_enabled,
+            language=req.language or "de",
+        )
+        db.add(r)
+        await db.commit()
+        await db.refresh(r)
+        return {"id": str(r.id), "email": r.email}
+
+
+@app.patch("/api/recipients/{rid}")
+async def update_recipient(rid: UUID, req: RecipientUpdate):
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).where(QuarantineRecipient.id == rid)
+        )
+        r = result.scalar_one_or_none()
+        if not r:
+            raise HTTPException(status_code=404, detail="not found")
+        if req.name is not None:
+            r.name = req.name
+        if req.daily_report_enabled is not None:
+            r.daily_report_enabled = req.daily_report_enabled
+        if req.language is not None:
+            r.language = req.language
+        await db.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/recipients/{rid}")
+async def delete_recipient(rid: UUID):
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).where(QuarantineRecipient.id == rid)
+        )
+        r = result.scalar_one_or_none()
+        if not r:
+            raise HTTPException(status_code=404, detail="not found")
+        await db.delete(r)
+        await db.commit()
+        return {"ok": True}
+
+
+@app.post("/api/recipients/{rid}/send-now")
+async def send_report_now(rid: UUID):
+    """Trigger an immediate daily report for one recipient (test or manual)."""
+    from .quarantine.daily_report import send_report as _send_report
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).where(QuarantineRecipient.id == rid)
+        )
+        r = result.scalar_one_or_none()
+        if not r:
+            raise HTTPException(status_code=404, detail="not found")
+        count = await _send_report(db, r)
+        return {"sent": count}
+
+
+# --- Public token-based quarantine actions (no auth) ---
+
+@app.get("/q/{token}/go")
+async def public_quarantine_action(token: str):
+    """One-click approve/reject from daily report links. No auth required;
+    the HMAC-signed token IS the authorization. Returns a small HTML page."""
+    from fastapi.responses import HTMLResponse
+
+    def _page(title: str, message: str, color: str) -> HTMLResponse:
+        return HTMLResponse(f"""<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>{title}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f4f6;margin:0;padding:24px;}}
+.card{{max-width:480px;margin:80px auto;background:#fff;border-radius:12px;padding:32px;text-align:center;
+       border:1px solid #e5e7eb;box-shadow:0 4px 12px rgba(0,0,0,.05);}}
+h1{{margin:0 0 8px;font-size:20px;color:{color};}}
+p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
+</style></head><body>
+<div class="card"><h1>{title}</h1><p>{message}</p></div>
+</body></html>""")
+
+    async with async_session() as db:
+        try:
+            qid, action = await _verify_qtoken(db, token)
+        except ValueError as e:
+            return _page("Link ungültig", f"Dieser Link ist ungültig oder abgelaufen ({e}).", "#dc2626")
+
+        qm = QuarantineManager(db)
+        if action == "approve":
+            ok = await qm.approve(qid)
+            if ok:
+                return _page("Zugestellt", "Die Nachricht wurde an Ihr Postfach zugestellt.", "#16a34a")
+            return _page("Bereits verarbeitet", "Diese Nachricht wurde bereits bearbeitet oder ist nicht mehr verfügbar.", "#6b7280")
+        else:
+            ok = await qm.reject(qid)
+            if ok:
+                return _page("Als Spam markiert", "Die Nachricht wurde verworfen und rspamd lernt das Muster als Spam.", "#dc2626")
+            return _page("Bereits verarbeitet", "Diese Nachricht wurde bereits bearbeitet.", "#6b7280")

@@ -225,3 +225,16 @@ class KeywordRule(Base):
     description = Column(Text)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class QuarantineRecipient(Base):
+    """End-user (mailbox owner) who receives daily quarantine reports."""
+    __tablename__ = "quarantine_recipients"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, nullable=False)
+    name = Column(String(255))
+    daily_report_enabled = Column(Boolean, nullable=False, default=True)
+    language = Column(String(5), nullable=False, default="de")
+    last_report_sent_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

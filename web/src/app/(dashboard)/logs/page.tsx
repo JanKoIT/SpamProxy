@@ -3,6 +3,7 @@ import { apiFetch } from "@/hooks/use-demo-fetch";
 
 import { useEffect, useState, useCallback } from "react";
 import { LearnButtons } from "@/components/logs/learn-buttons";
+import { AddRecipientButton } from "@/components/logs/add-recipient-button";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -307,6 +308,16 @@ export default function LogsPage() {
                 <span className="text-sm text-slate-400">Learn:</span>
                 <LearnButtons logId={detail.id} />
               </div>
+
+              {/* Quick-add recipients for daily reports */}
+              {detail.rcpt_to.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-slate-400">Daily report:</span>
+                  {detail.rcpt_to.map((addr) => (
+                    <AddRecipientButton key={addr} email={addr} />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
