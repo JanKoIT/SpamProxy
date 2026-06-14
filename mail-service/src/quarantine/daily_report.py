@@ -50,6 +50,55 @@ def _esc(s: str | None) -> str:
     return html.escape(s or "", quote=True)
 
 
+async def _company_footer(session: AsyncSession) -> str:
+    """Build the company info block shown at the bottom of every report.
+    Without proper sender info (name + postal address) the mail looks
+    like spam to many filters."""
+    name = await _get_setting(session, "company_name")
+    addr = await _get_setting(session, "company_address")
+    email = await _get_setting(session, "company_email")
+    phone = await _get_setting(session, "company_phone")
+    website = await _get_setting(session, "company_website")
+    imprint = await _get_setting(session, "company_imprint_url")
+    privacy = await _get_setting(session, "company_privacy_url")
+
+    if not (name or addr or email):
+        # Fallback: at least show the proxy hostname so the mail isn't anonymous
+        proxy = await _get_setting(session, "public_base_url", "")
+        return (
+            '<div style="font-size:11px;color:#9ca3af;">'
+            f'Diese automatische Nachricht stammt von Ihrem SpamProxy-System '
+            f'({_esc(proxy)}). Bitte kontaktieren Sie Ihren Administrator.'
+            '</div>'
+        )
+
+    contact_bits = []
+    if email:
+        contact_bits.append(f'<a href="mailto:{_esc(email)}" style="color:#3b82f6;text-decoration:none;">{_esc(email)}</a>')
+    if phone:
+        contact_bits.append(_esc(phone))
+    if website:
+        url = website if website.startswith("http") else f"https://{website}"
+        contact_bits.append(f'<a href="{_esc(url)}" style="color:#3b82f6;text-decoration:none;">{_esc(website)}</a>')
+    contact_line = " &middot; ".join(contact_bits)
+
+    legal_bits = []
+    if imprint:
+        legal_bits.append(f'<a href="{_esc(imprint)}" style="color:#6b7280;">Impressum</a>')
+    if privacy:
+        legal_bits.append(f'<a href="{_esc(privacy)}" style="color:#6b7280;">Datenschutz</a>')
+    legal_line = " &middot; ".join(legal_bits)
+
+    return f"""
+      <div style="border-top:1px solid #e5e7eb;margin-top:8px;padding-top:12px;font-size:11px;color:#6b7280;line-height:1.6;">
+        <div style="font-weight:600;color:#374151;">{_esc(name)}</div>
+        {f'<div>{_esc(addr)}</div>' if addr else ''}
+        {f'<div>{contact_line}</div>' if contact_line else ''}
+        {f'<div style="margin-top:6px;">{legal_line}</div>' if legal_line else ''}
+      </div>
+    """
+
+
 async def build_report_html(session: AsyncSession, recipient_email: str,
                              entries: Sequence[tuple], base_url: str) -> str:
     """Render the daily report as HTML."""
@@ -102,6 +151,9 @@ async def build_report_html(session: AsyncSession, recipient_email: str,
           Empfänger: {_esc(recipient_email)} &middot; Links gültig für 7 Tage &middot;
           Nicht aufgeführte Mails werden nach 30 Tagen automatisch verworfen.
         </td></tr>
+        <tr><td style="padding:14px 24px 20px;background:#f9fafb;">
+          {await _company_footer(session)}
+        </td></tr>
       </table>
     </body></html>
     """
@@ -123,14 +175,43 @@ async def send_report(session: AsyncSession, recipient: QuarantineRecipient) -> 
 
     html_body = await build_report_html(session, recipient.email, entries, base_url)
 
+    company_name = await _get_setting(session, "company_name")
+    company_email = await _get_setting(session, "company_email")
+    company_phone = await _get_setting(session, "company_phone")
+    company_addr = await _get_setting(session, "company_address")
+
+    # Build a proper From: with display name so it's not anonymous
+    if company_name and "<" not in from_addr:
+        from_header = f'"{company_name} Spamfilter" <{from_addr}>'
+    else:
+        from_header = from_addr
+
     msg = EmailMessage()
-    msg["From"] = from_addr
+    msg["From"] = from_header
     msg["To"] = recipient.email
     msg["Subject"] = subject_tpl.format(count=len(entries))
-    msg.set_content(
-        f"Sie haben {len(entries)} Nachrichten in der Spam-Quarantäne.\n"
-        f"Bitte öffnen Sie die HTML-Version dieser E-Mail, um sie zu verwalten."
-    )
+    if company_email:
+        msg["Reply-To"] = company_email
+    # Help receivers see this as transactional, not marketing
+    msg["Auto-Submitted"] = "auto-generated"
+    msg["X-Auto-Response-Suppress"] = "All"
+
+    # Text body with footer so plain-text clients also see who sent it
+    text_lines = [
+        f"Sie haben {len(entries)} Nachricht(en) in der Spam-Quarantäne.",
+        "Bitte öffnen Sie die HTML-Version dieser E-Mail, um sie zu verwalten.",
+        "",
+    ]
+    if company_name:
+        text_lines.append("--")
+        text_lines.append(company_name)
+        if company_addr:
+            text_lines.append(company_addr)
+        if company_email:
+            text_lines.append(company_email)
+        if company_phone:
+            text_lines.append(company_phone)
+    msg.set_content("\n".join(text_lines))
     msg.add_alternative(html_body, subtype="html")
 
     # Send via Postfix re-inject port (bypasses rspamd milter so reports

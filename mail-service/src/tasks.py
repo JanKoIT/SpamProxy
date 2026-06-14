@@ -45,6 +45,13 @@ DEFAULT_SETTINGS = [
     ("daily_report_subject", "Ihre Spam-Quarantäne: {count} neue Nachrichten", "reports", "Subject line. Placeholder: {count}"),
     ("public_base_url", "https://spamproxy.example.com", "reports", "Base URL used in approve/reject links sent to recipients"),
     ("report_token_secret", "", "reports", "HMAC secret for signing report links (auto-generated on first start)"),
+    ("company_name", "", "reports", "Operator company name shown in report footer"),
+    ("company_address", "", "reports", "Postal address (one line, e.g. 'Musterstr. 1, 12345 Musterstadt')"),
+    ("company_email", "", "reports", "Contact email shown in report footer"),
+    ("company_phone", "", "reports", "Contact phone shown in report footer"),
+    ("company_website", "", "reports", "Company website URL shown in report footer"),
+    ("company_imprint_url", "", "reports", "Direct link to your imprint/legal page"),
+    ("company_privacy_url", "", "reports", "Direct link to your privacy policy page"),
 ]
 
 
