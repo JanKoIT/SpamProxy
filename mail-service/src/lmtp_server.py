@@ -212,9 +212,10 @@ class ContentFilterHandler:
                 if not is_outgoing:
                     access_action = await self._check_access_lists(db, mail_from, client_ip)
 
-                # Spoofing detection: inbound mail claiming to be from a local domain
-                # is always spoofing (legit outbound uses SASL auth on port 587).
-                # Skipped if sender/IP is whitelisted.
+                # Spoofing detection: inbound mail claiming a local domain is
+                # spoofing UNLESS SPF authorizes the sending IP. External relay
+                # services (mailbaby, sendgrid, …) are legitimate when listed
+                # in the domain's SPF record. Skipped if whitelisted.
                 if (not is_outgoing and access_action != "whitelist"
                         and mail_from and "@" in mail_from):
                     sender_domain = mail_from.split("@")[1].lower()
@@ -222,23 +223,46 @@ class ContentFilterHandler:
                         select(Domain).where(Domain.domain == sender_domain)
                     )
                     if local_dom.scalar_one_or_none():
-                        logger.warning(
-                            "REJECTED: inbound mail spoofing local domain %s from %s",
-                            sender_domain, client_ip,
-                        )
-                        log_entry = MailLog(
-                            message_id=message_id, mail_from=mail_from,
-                            rcpt_to=rcpt_to, subject=subject, direction="inbound",
-                            client_ip=client_ip, size_bytes=len(raw_message),
-                            rspamd_score=rspamd_score, final_score=99.0,
-                            rspamd_symbols=rspamd_symbols or None,
-                            action="rejected",
-                            processing_time_ms=int((time.monotonic() - start) * 1000),
-                        )
-                        db.add(log_entry)
-                        await self._update_stats(db, "inbound", "rejected")
-                        await db.commit()
-                        return f"550 5.7.1 Rejected: inbound mail claiming local domain {sender_domain} from external IP {client_ip}. Use authenticated submission (port 587) for outgoing mail."
+                        spf_allow = "R_SPF_ALLOW" in rspamd_symbols
+                        spf_dns_fail = "R_SPF_DNSFAIL" in rspamd_symbols
+                        spf_softfail = "R_SPF_SOFTFAIL" in rspamd_symbols
+
+                        if spf_allow:
+                            logger.info(
+                                "Local domain %s allowed via SPF from %s",
+                                sender_domain, client_ip,
+                            )
+                        elif spf_dns_fail:
+                            # Can't verify - allow but raise score so AI/Bayes weigh in.
+                            logger.warning(
+                                "Local domain %s, SPF DNS error for %s - +3.0 score",
+                                sender_domain, client_ip,
+                            )
+                            final_score += 3.0
+                        else:
+                            # SPF fail/softfail/none → silent discard, no backscatter.
+                            reason = ("SPF softfail" if spf_softfail
+                                      else "SPF fail/none")
+                            logger.warning(
+                                "DISCARDED: local-domain spoofing of %s from %s (%s)",
+                                sender_domain, client_ip, reason,
+                            )
+                            log_entry = MailLog(
+                                message_id=message_id, mail_from=mail_from,
+                                rcpt_to=rcpt_to, subject=subject, direction="inbound",
+                                client_ip=client_ip, size_bytes=len(raw_message),
+                                rspamd_score=rspamd_score, final_score=99.0,
+                                rspamd_symbols=rspamd_symbols or None,
+                                action="discarded",
+                                processing_time_ms=int((time.monotonic() - start) * 1000),
+                            )
+                            db.add(log_entry)
+                            await self._update_stats(db, "inbound", "discarded")
+                            await db.commit()
+                            _, _, learn_rejected = await self._load_thresholds(db)
+                            if learn_rejected:
+                                asyncio.create_task(_rspamd_learn(raw_message, "spam"))
+                            return "250 OK"
 
                 fake_bounce_adj = 0.0  # also used by force_ai logic below
                 if not is_outgoing and access_action == "whitelist":
