@@ -205,9 +205,18 @@ class ContentFilterHandler:
             # Apply whitelist/blacklist and scoring rules
             final_score = rspamd_score
             async with async_session() as db:
+                # Whitelist check FIRST - bypasses all subsequent hard checks
+                # (spoofing detection, auth failures, scoring rules, AI scan).
+                # An explicit "always deliver" must always win.
+                access_action = None
+                if not is_outgoing:
+                    access_action = await self._check_access_lists(db, mail_from, client_ip)
+
                 # Spoofing detection: inbound mail claiming to be from a local domain
                 # is always spoofing (legit outbound uses SASL auth on port 587).
-                if not is_outgoing and mail_from and "@" in mail_from:
+                # Skipped if sender/IP is whitelisted.
+                if (not is_outgoing and access_action != "whitelist"
+                        and mail_from and "@" in mail_from):
                     sender_domain = mail_from.split("@")[1].lower()
                     local_dom = await db.execute(
                         select(Domain).where(Domain.domain == sender_domain)
@@ -231,11 +240,14 @@ class ContentFilterHandler:
                         await db.commit()
                         return f"550 5.7.1 Rejected: inbound mail claiming local domain {sender_domain} from external IP {client_ip}. Use authenticated submission (port 587) for outgoing mail."
 
-                if not is_outgoing:
-                    access_action = await self._check_access_lists(db, mail_from, client_ip)
-                    if access_action == "whitelist":
-                        final_score = -1.0
-                    elif access_action == "blacklist":
+                fake_bounce_adj = 0.0  # also used by force_ai logic below
+                if not is_outgoing and access_action == "whitelist":
+                    # Whitelist override: bypass everything (spoofing, auth checks,
+                    # scoring rules, AI scan). Mail goes straight to delivered.
+                    final_score = -1.0
+                    logger.info("WHITELIST bypass: from=%s ip=%s", mail_from, client_ip)
+                elif not is_outgoing:
+                    if access_action == "blacklist":
                         final_score = REJECT_THRESHOLD
 
                     if access_action is None:
@@ -292,10 +304,11 @@ class ContentFilterHandler:
                         return "250 OK"
                     final_score += auth_result
 
-                # Check if sender is known (first-time sender detection)
+                # Check if sender is known (first-time sender detection).
+                # Skipped on whitelist - whitelisted senders skip AI scan too.
                 is_first_sender = False
                 force_ai = False
-                if not is_outgoing:
+                if not is_outgoing and access_action != "whitelist":
                     if mail_from:
                         is_first_sender = await self._track_sender(db, mail_from, final_score)
                         if is_first_sender:
@@ -310,12 +323,13 @@ class ContentFilterHandler:
                         # Empty sender (bounce) - force AI if it looks suspicious
                         force_ai = fake_bounce_adj > 0
 
-                # AI classification: grey zone OR first-time sender
+                # AI classification: grey zone OR first-time sender (skip on whitelist)
                 ai_score = None
                 ai_reason = ""
                 should_ai_scan = (
                     self.ai_classifier
                     and settings.ai_enabled
+                    and access_action != "whitelist"
                     and (
                         (settings.ai_grey_zone_min <= final_score <= settings.ai_grey_zone_max)
                         or force_ai

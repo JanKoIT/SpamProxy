@@ -1,9 +1,19 @@
 #!/bin/bash
 set -e
 
-# Set hostname
+# Set hostname and derive mydomain so bounce messages come from a real
+# address (MAILER-DAEMON@$mydomain). Without this, bounces use the
+# main.cf default "example.com".
 if [ -n "$PROXY_HOSTNAME" ]; then
     postconf -e "myhostname=$PROXY_HOSTNAME"
+    # Derive mydomain: strip the first label (e.g. mailgw.koserver.de → koserver.de)
+    # Fall back to the full hostname if there's only one label.
+    PROXY_DOMAIN="${PROXY_HOSTNAME#*.}"
+    if [ -z "$PROXY_DOMAIN" ] || [ "$PROXY_DOMAIN" = "$PROXY_HOSTNAME" ]; then
+        PROXY_DOMAIN="$PROXY_HOSTNAME"
+    fi
+    postconf -e "mydomain=$PROXY_DOMAIN"
+    postconf -e "myorigin=$PROXY_HOSTNAME"
 fi
 
 # Configure PostgreSQL lookup credentials for domain routing
