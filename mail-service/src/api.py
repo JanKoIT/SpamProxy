@@ -2928,20 +2928,70 @@ p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
 <div class="card"><h1>{title}</h1><p>{message}</p></div>
 </body></html>""")
 
+    from datetime import datetime as _dt, timezone as _tz
+
     async with async_session() as db:
         try:
-            qid, action = await _verify_qtoken(db, token)
+            payload = await _verify_qtoken(db, token)
         except ValueError as e:
             return _page("Link ungültig", f"Dieser Link ist ungültig oder abgelaufen ({e}).", "#dc2626")
 
         qm = QuarantineManager(db)
-        if action == "approve":
-            ok = await qm.approve(qid)
-            if ok:
-                return _page("Zugestellt", "Die Nachricht wurde an Ihr Postfach zugestellt.", "#16a34a")
-            return _page("Bereits verarbeitet", "Diese Nachricht wurde bereits bearbeitet oder ist nicht mehr verfügbar.", "#6b7280")
-        else:
+        action = payload["a"]
+
+        # Single-mail token
+        if "q" in payload:
+            qid = UUID(payload["q"])
+            if action == "approve":
+                ok = await qm.approve(qid)
+                if ok:
+                    return _page("Zugestellt", "Die Nachricht wurde an Ihr Postfach zugestellt.", "#16a34a")
+                return _page("Bereits verarbeitet", "Diese Nachricht wurde bereits bearbeitet oder ist nicht mehr verfügbar.", "#6b7280")
             ok = await qm.reject(qid)
             if ok:
                 return _page("Als Spam markiert", "Die Nachricht wurde verworfen und rspamd lernt das Muster als Spam.", "#dc2626")
             return _page("Bereits verarbeitet", "Diese Nachricht wurde bereits bearbeitet.", "#6b7280")
+
+        # Bulk token: act on all pending entries for this recipient that
+        # were quarantined at or before the report's cutoff timestamp.
+        recipient = payload["r"]
+        cutoff = _dt.fromtimestamp(int(payload["c"]), tz=_tz.utc)
+        result = await db.execute(
+            select(Quarantine)
+            .join(MailLog, Quarantine.mail_log_id == MailLog.id)
+            .where(Quarantine.status == "pending")
+            .where(MailLog.rcpt_to.any(recipient))
+            .where(MailLog.created_at <= cutoff)
+        )
+        targets = list(result.scalars().all())
+
+        if not targets:
+            return _page(
+                "Nichts zu tun",
+                "Es gibt aktuell keine zu bearbeitenden Nachrichten — vermutlich wurden sie bereits einzeln behandelt.",
+                "#6b7280",
+            )
+
+        succeeded = 0
+        for entry in targets:
+            try:
+                if action == "approve_all":
+                    if await qm.approve(entry.id):
+                        succeeded += 1
+                else:
+                    if await qm.reject(entry.id):
+                        succeeded += 1
+            except Exception:
+                logger.exception("Bulk action failed for %s", entry.id)
+
+        if action == "approve_all":
+            return _page(
+                "Alle zugestellt",
+                f"{succeeded} von {len(targets)} Nachrichten wurden an Ihr Postfach zugestellt.",
+                "#16a34a",
+            )
+        return _page(
+            "Alle als Spam markiert",
+            f"{succeeded} von {len(targets)} Nachrichten wurden verworfen und rspamd lernt die Muster.",
+            "#dc2626",
+        )

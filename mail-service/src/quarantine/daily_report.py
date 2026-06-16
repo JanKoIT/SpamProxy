@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from .models import MailLog, Quarantine, Setting, QuarantineRecipient
-from .tokens import make_token
+from .tokens import make_token, make_bulk_token
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,40 @@ async def _company_footer(session: AsyncSession) -> str:
 async def build_report_html(session: AsyncSession, recipient_email: str,
                              entries: Sequence[tuple], base_url: str) -> str:
     """Render the daily report as HTML."""
+    import time as _time
+
+    # Bulk tokens: cutoff = newest mail in this report. Covers everything
+    # in the email; mails arriving later are excluded from the bulk action.
+    cutoff_dt = max(
+        (log.created_at for _, log in entries if log.created_at),
+        default=None,
+    )
+    cutoff_ts = int(cutoff_dt.timestamp()) if cutoff_dt else int(_time.time())
+    bulk_approve_tok = await make_bulk_token(
+        session, recipient_email, "approve_all", cutoff_ts
+    )
+    bulk_reject_tok = await make_bulk_token(
+        session, recipient_email, "reject_all", cutoff_ts
+    )
+    bulk_approve_url = f"{base_url.rstrip('/')}/q/{bulk_approve_tok}/go"
+    bulk_reject_url = f"{base_url.rstrip('/')}/q/{bulk_reject_tok}/go"
+
+    bulk_bar = f"""
+    <tr><td style="padding:14px 24px;background:#eff6ff;border-bottom:1px solid #dbeafe;text-align:right;">
+      <span style="font-size:12px;color:#1e40af;margin-right:12px;">
+        {len(entries)} Nachricht(en):
+      </span>
+      <a href="{bulk_approve_url}" style="display:inline-block;padding:8px 14px;margin-right:8px;
+         background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;">
+         Alle zustellen
+      </a>
+      <a href="{bulk_reject_url}" style="display:inline-block;padding:8px 14px;
+         background:#dc2626;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;">
+         Alle als Spam
+      </a>
+    </td></tr>
+    """
+
     rows = []
     for q, log in entries:
         approve_tok = await make_token(session, q.id, "approve")
@@ -142,11 +176,13 @@ async def build_report_html(session: AsyncSession, recipient_email: str,
             {len(entries)} neue Nachrichten warten auf Ihre Entscheidung
           </p>
         </td></tr>
+        {bulk_bar}
         <tr><td style="padding:8px 16px;">
           <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
             {''.join(rows)}
           </table>
         </td></tr>
+        {bulk_bar if len(entries) >= 5 else ''}
         <tr><td style="padding:16px 24px;background:#f9fafb;font-size:11px;color:#6b7280;">
           Empfänger: {_esc(recipient_email)} &middot; Links gültig für 7 Tage &middot;
           Nicht aufgeführte Mails werden nach 30 Tagen automatisch verworfen.
