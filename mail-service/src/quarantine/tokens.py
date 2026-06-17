@@ -4,13 +4,12 @@ Token format: base64url(payload).base64url(signature)
 
 Two token shapes:
   Single: {"q": "<quarantine-uuid>", "a": "approve|reject", "e": <expiry>}
-  Bulk:   {"r": "<recipient-email>", "a": "approve_all|reject_all",
-           "c": <cutoff-unix-ts>, "e": <expiry>}
+  Bulk:   {"i": ["<uuid1>", "<uuid2>", ...], "a": "approve_all|reject_all",
+           "e": <expiry>}
 
-Bulk tokens act on all currently pending quarantine entries for the
-recipient that were quarantined at or before the cutoff timestamp.
-This prevents bulk actions from accidentally including mails that
-arrived AFTER the report was sent.
+Bulk tokens act on the EXACT list of quarantine IDs that were in the
+original report. This is deterministic - mails that arrived after the
+report cannot be affected, and partially-processed sets stay consistent.
 
 Recipients click links like https://host/q/<token>/go which:
 - Validate signature against the configured secret
@@ -71,18 +70,17 @@ async def make_token(session: AsyncSession, quarantine_id: UUID,
     return _build(payload, secret)
 
 
-async def make_bulk_token(session: AsyncSession, recipient_email: str,
-                          action: str, cutoff_ts: int,
+async def make_bulk_token(session: AsyncSession, action: str,
+                          quarantine_ids: list[UUID],
                           ttl_seconds: int = _TOKEN_TTL_SECONDS) -> str:
-    """Create a signed token for a bulk action across one recipient's
-    pending quarantine (only mails quarantined at or before cutoff_ts)."""
+    """Create a signed token for a bulk action across an exact list of
+    quarantine entries."""
     if action not in ("approve_all", "reject_all"):
         raise ValueError(f"invalid bulk action: {action}")
     secret = await _get_secret(session)
     payload = {
-        "r": recipient_email.lower(),
+        "i": [str(q) for q in quarantine_ids],
         "a": action,
-        "c": int(cutoff_ts),
         "e": int(time.time()) + ttl_seconds,
     }
     return _build(payload, secret)
@@ -132,6 +130,9 @@ async def verify_token(session: AsyncSession, token: str) -> dict:
         # single-mail token
         UUID(payload["q"])  # validate
         return payload
-    if "r" in payload and "c" in payload:
+    if "i" in payload and isinstance(payload["i"], list):
+        # bulk-IDs token
+        for item in payload["i"]:
+            UUID(item)  # validate each entry
         return payload
     raise ValueError("payload missing fields")

@@ -2928,8 +2928,6 @@ p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
 <div class="card"><h1>{title}</h1><p>{message}</p></div>
 </body></html>""")
 
-    from datetime import datetime as _dt, timezone as _tz
-
     async with async_session() as db:
         try:
             payload = await _verify_qtoken(db, token)
@@ -2952,46 +2950,40 @@ p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
                 return _page("Als Spam markiert", "Die Nachricht wurde verworfen und rspamd lernt das Muster als Spam.", "#dc2626")
             return _page("Bereits verarbeitet", "Diese Nachricht wurde bereits bearbeitet.", "#6b7280")
 
-        # Bulk token: act on all pending entries for this recipient that
-        # were quarantined at or before the report's cutoff timestamp.
-        recipient = payload["r"]
-        cutoff = _dt.fromtimestamp(int(payload["c"]), tz=_tz.utc)
-        result = await db.execute(
-            select(Quarantine)
-            .join(MailLog, Quarantine.mail_log_id == MailLog.id)
-            .where(Quarantine.status == "pending")
-            .where(MailLog.rcpt_to.any(recipient))
-            .where(MailLog.created_at <= cutoff)
-        )
-        targets = list(result.scalars().all())
-
-        if not targets:
-            return _page(
-                "Nichts zu tun",
-                "Es gibt aktuell keine zu bearbeitenden Nachrichten — vermutlich wurden sie bereits einzeln behandelt.",
-                "#6b7280",
-            )
-
+        # Bulk token: act on the exact list of quarantine IDs from the report.
+        ids = [UUID(s) for s in payload["i"]]
+        total = len(ids)
         succeeded = 0
-        for entry in targets:
+        skipped = 0
+        for qid in ids:
             try:
                 if action == "approve_all":
-                    if await qm.approve(entry.id):
+                    if await qm.approve(qid):
                         succeeded += 1
+                    else:
+                        skipped += 1
                 else:
-                    if await qm.reject(entry.id):
+                    if await qm.reject(qid):
                         succeeded += 1
+                    else:
+                        skipped += 1
             except Exception:
-                logger.exception("Bulk action failed for %s", entry.id)
+                logger.exception("Bulk action failed for %s", qid)
+                skipped += 1
+
+        skipped_note = (
+            f" {skipped} Nachricht(en) wurden übersprungen (bereits einzeln verarbeitet)."
+            if skipped else ""
+        )
 
         if action == "approve_all":
             return _page(
                 "Alle zugestellt",
-                f"{succeeded} von {len(targets)} Nachrichten wurden an Ihr Postfach zugestellt.",
+                f"{succeeded} von {total} Nachrichten wurden an Ihr Postfach zugestellt.{skipped_note}",
                 "#16a34a",
             )
         return _page(
             "Alle als Spam markiert",
-            f"{succeeded} von {len(targets)} Nachrichten wurden verworfen und rspamd lernt die Muster.",
+            f"{succeeded} von {total} Nachrichten wurden verworfen und rspamd lernt die Muster.{skipped_note}",
             "#dc2626",
         )

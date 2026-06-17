@@ -102,23 +102,15 @@ async def _company_footer(session: AsyncSession) -> str:
 async def build_report_html(session: AsyncSession, recipient_email: str,
                              entries: Sequence[tuple], base_url: str) -> str:
     """Render the daily report as HTML."""
-    import time as _time
-
-    # Bulk tokens: cutoff = newest mail in this report. Covers everything
-    # in the email; mails arriving later are excluded from the bulk action.
-    # +1 second buffer because token is integer-seconds while created_at
-    # has microsecond precision (without the buffer, the newest mail
-    # would round-trip below cutoff and be excluded).
-    cutoff_dt = max(
-        (log.created_at for _, log in entries if log.created_at),
-        default=None,
-    )
-    cutoff_ts = (int(cutoff_dt.timestamp()) + 1) if cutoff_dt else int(_time.time())
+    # Bulk tokens carry the EXACT quarantine IDs from this report.
+    # That's deterministic - no timing issues, no risk of catching mails
+    # that arrived later.
+    quarantine_ids = [q.id for q, _ in entries]
     bulk_approve_tok = await make_bulk_token(
-        session, recipient_email, "approve_all", cutoff_ts
+        session, "approve_all", quarantine_ids
     )
     bulk_reject_tok = await make_bulk_token(
-        session, recipient_email, "reject_all", cutoff_ts
+        session, "reject_all", quarantine_ids
     )
     bulk_approve_url = f"{base_url.rstrip('/')}/q/{bulk_approve_tok}/go"
     bulk_reject_url = f"{base_url.rstrip('/')}/q/{bulk_reject_tok}/go"
