@@ -106,11 +106,14 @@ async def build_report_html(session: AsyncSession, recipient_email: str,
 
     # Bulk tokens: cutoff = newest mail in this report. Covers everything
     # in the email; mails arriving later are excluded from the bulk action.
+    # +1 second buffer because token is integer-seconds while created_at
+    # has microsecond precision (without the buffer, the newest mail
+    # would round-trip below cutoff and be excluded).
     cutoff_dt = max(
         (log.created_at for _, log in entries if log.created_at),
         default=None,
     )
-    cutoff_ts = int(cutoff_dt.timestamp()) if cutoff_dt else int(_time.time())
+    cutoff_ts = (int(cutoff_dt.timestamp()) + 1) if cutoff_dt else int(_time.time())
     bulk_approve_tok = await make_bulk_token(
         session, recipient_email, "approve_all", cutoff_ts
     )
