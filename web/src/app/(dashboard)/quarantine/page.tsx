@@ -93,6 +93,9 @@ export default function QuarantinePage() {
         pageSize={pageSize}
         currentStatus={status}
         currentSearch={search}
+        onPageChange={(p) => setPage(p)}
+        onSearchChange={(s) => { setSearch(s); setPage(1); }}
+        onRefresh={fetchData}
       />
     </div>
   );

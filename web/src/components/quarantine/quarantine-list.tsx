@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { QuarantineItem } from "@/lib/api";
@@ -20,6 +20,9 @@ interface QuarantineListProps {
   pageSize: number;
   currentStatus: string;
   currentSearch: string;
+  onPageChange?: (page: number) => void;
+  onSearchChange?: (search: string) => void;
+  onRefresh?: () => void;
 }
 
 function scoreColor(score: number | null): string {
@@ -47,6 +50,9 @@ export function QuarantineList({
   pageSize,
   currentStatus,
   currentSearch,
+  onPageChange,
+  onSearchChange,
+  onRefresh,
 }: QuarantineListProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -54,6 +60,11 @@ export function QuarantineList({
   const [search, setSearch] = useState(currentSearch);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Keep input in sync if parent resets search (e.g. tab change)
+  useEffect(() => {
+    setSearch(currentSearch);
+  }, [currentSearch]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -74,19 +85,40 @@ export function QuarantineList({
     }
   }
 
-  function navigate(params: Record<string, string>) {
-    const sp = new URLSearchParams({
-      status: currentStatus,
-      ...params,
-    });
-    startTransition(() => {
-      router.push(`/quarantine?${sp.toString()}`);
-    });
+  function gotoPage(p: number) {
+    if (onPageChange) {
+      onPageChange(p);
+    } else {
+      // Legacy fallback (server-rendered usage)
+      const sp = new URLSearchParams({
+        status: currentStatus,
+        page: String(p),
+        search,
+      });
+      startTransition(() => router.push(`/quarantine?${sp.toString()}`));
+    }
   }
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    navigate({ search, page: "1" });
+    if (onSearchChange) {
+      onSearchChange(search);
+    } else {
+      const sp = new URLSearchParams({
+        status: currentStatus,
+        page: "1",
+        search,
+      });
+      startTransition(() => router.push(`/quarantine?${sp.toString()}`));
+    }
+  }
+
+  function reload() {
+    if (onRefresh) {
+      onRefresh();
+    } else {
+      startTransition(() => router.refresh());
+    }
   }
 
   async function handleAction(id: string, action: "approve" | "reject") {
@@ -97,7 +129,7 @@ export function QuarantineList({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      startTransition(() => router.refresh());
+      reload();
     } finally {
       setActionLoading(null);
     }
@@ -113,7 +145,7 @@ export function QuarantineList({
         body: JSON.stringify({ ids: Array.from(selected), action }),
       });
       setSelected(new Set());
-      startTransition(() => router.refresh());
+      reload();
     } finally {
       setBulkLoading(false);
     }
@@ -296,7 +328,7 @@ export function QuarantineList({
           </p>
           <div className="flex gap-1">
             <button
-              onClick={() => navigate({ page: String(page - 1), search })}
+              onClick={() => gotoPage(page - 1)}
               disabled={page <= 1 || isPending}
               className="rounded-md border border-slate-700 bg-slate-900 p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition-colors"
             >
@@ -316,7 +348,7 @@ export function QuarantineList({
               return (
                 <button
                   key={p}
-                  onClick={() => navigate({ page: String(p), search })}
+                  onClick={() => gotoPage(p)}
                   disabled={isPending}
                   className={`min-w-[36px] rounded-md border px-2 py-2 text-sm font-medium transition-colors ${
                     p === page
@@ -329,7 +361,7 @@ export function QuarantineList({
               );
             })}
             <button
-              onClick={() => navigate({ page: String(page + 1), search })}
+              onClick={() => gotoPage(page + 1)}
               disabled={page >= totalPages || isPending}
               className="rounded-md border border-slate-700 bg-slate-900 p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition-colors"
             >
