@@ -521,9 +521,11 @@ async def list_quarantine(
         )
 
         if search:
+            # rcpt_to is text[]; use array_to_string for ILIKE on any element
             query = query.where(
-                (MailLog.mail_from.ilike(f"%{search}%"))
-                | (MailLog.subject.ilike(f"%{search}%"))
+                MailLog.mail_from.ilike(f"%{search}%")
+                | MailLog.subject.ilike(f"%{search}%")
+                | func.array_to_string(MailLog.rcpt_to, ",").ilike(f"%{search}%")
             )
 
         # Count
@@ -681,8 +683,9 @@ async def get_logs(
             query = query.where(MailLog.action == action)
         if search:
             query = query.where(
-                (MailLog.mail_from.ilike(f"%{search}%"))
-                | (MailLog.subject.ilike(f"%{search}%"))
+                MailLog.mail_from.ilike(f"%{search}%")
+                | MailLog.subject.ilike(f"%{search}%")
+                | func.array_to_string(MailLog.rcpt_to, ",").ilike(f"%{search}%")
             )
 
         count_query = select(func.count()).select_from(query.subquery())
