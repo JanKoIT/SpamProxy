@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShieldAlert, CheckCircle, XCircle, Loader2, LogOut, ListChecks } from "lucide-react";
+import { ShieldAlert, CheckCircle, XCircle, Loader2, LogOut, ListChecks, KeyRound } from "lucide-react";
 
 type Item = {
   id: string;
@@ -99,6 +99,12 @@ export default function PortalQuarantine() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
           >
             <ListChecks className="h-4 w-4" /> Whitelist &amp; Blacklist
+          </Link>
+          <Link
+            href="/portal/account"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+          >
+            <KeyRound className="h-4 w-4" /> Konto
           </Link>
           <button
             onClick={logout}

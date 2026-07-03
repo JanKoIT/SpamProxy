@@ -236,6 +236,7 @@ class QuarantineRecipient(Base):
     name = Column(String(255))
     daily_report_enabled = Column(Boolean, nullable=False, default=True)
     portal_enabled = Column(Boolean, nullable=False, default=True)
+    password_hash = Column(String(255))  # optional - nullable means "magic-link only"
     language = Column(String(5), nullable=False, default="de")
     last_report_sent_at = Column(DateTime(timezone=True))
     last_login_at = Column(DateTime(timezone=True))

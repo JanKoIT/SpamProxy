@@ -132,6 +132,9 @@ async def ensure_tables():
             "ALTER TABLE quarantine_recipients ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ"
         ))
         await session.execute(text(
+            "ALTER TABLE quarantine_recipients ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
+        ))
+        await session.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_quarantine_recipients_email ON quarantine_recipients(LOWER(email))"
         ))
         await session.execute(text("""

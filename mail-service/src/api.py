@@ -2829,6 +2829,7 @@ async def list_recipients():
                 "email": r.email,
                 "name": r.name,
                 "daily_report_enabled": r.daily_report_enabled,
+                "has_password": bool(r.password_hash),
                 "language": r.language,
                 "last_report_sent_at": r.last_report_sent_at.isoformat()
                     if r.last_report_sent_at else None,
@@ -3147,6 +3148,113 @@ async def portal_verify(token: str, response: Response):
 async def portal_logout(response: Response):
     response.delete_cookie(_PORTAL_COOKIE, path="/")
     return {"ok": True}
+
+
+class PortalPasswordLogin(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/portal/login-password")
+async def portal_login_password(req: PortalPasswordLogin, response: Response):
+    """Password-based login. Returns 401 on bad credentials or if the
+    recipient has no password set (magic-link-only account)."""
+    email = req.email.strip().lower()
+    if "@" not in email or not req.password:
+        raise HTTPException(status_code=400, detail="invalid credentials")
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).where(
+                QuarantineRecipient.email == email,
+                QuarantineRecipient.portal_enabled.is_(True),
+            )
+        )
+        recipient = result.scalar_one_or_none()
+        if not recipient or not recipient.password_hash:
+            raise HTTPException(status_code=401, detail="invalid credentials")
+
+        verify = await db.execute(
+            text("SELECT :hash = crypt(:password, :hash) AS valid"),
+            {"hash": recipient.password_hash, "password": req.password},
+        )
+        if not verify.one().valid:
+            raise HTTPException(status_code=401, detail="invalid credentials")
+
+        recipient.last_login_at = datetime.now(timezone.utc)
+        session_tok = await make_session_token(db, email)
+        await db.commit()
+
+    response.set_cookie(
+        _PORTAL_COOKIE, session_tok,
+        max_age=_PORTAL_SESSION_TTL,
+        httponly=True, samesite="lax", path="/",
+    )
+    return {"ok": True, "email": email}
+
+
+class PortalSetPassword(BaseModel):
+    current_password: str | None = None
+    new_password: str
+
+
+@app.post("/api/portal/set-password")
+async def portal_set_password(
+    req: PortalSetPassword,
+    spamproxy_portal: str | None = Cookie(default=None),
+):
+    """Recipient sets/changes their own password. Requires current password
+    if one is already set."""
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="password too short (min 8)")
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+        if r.password_hash:
+            if not req.current_password:
+                raise HTTPException(status_code=400, detail="current password required")
+            verify = await db.execute(
+                text("SELECT :hash = crypt(:password, :hash) AS valid"),
+                {"hash": r.password_hash, "password": req.current_password},
+            )
+            if not verify.one().valid:
+                raise HTTPException(status_code=401, detail="wrong current password")
+        h = await db.execute(
+            text("SELECT crypt(:password, gen_salt('bf')) AS hash"),
+            {"password": req.new_password},
+        )
+        r.password_hash = h.one().hash
+        await db.commit()
+        return {"ok": True}
+
+
+class AdminSetRecipientPassword(BaseModel):
+    password: str | None = None  # None = clear password (magic-link only)
+
+
+@app.post("/api/recipients/{rid}/set-password")
+async def admin_set_recipient_password(rid: UUID, req: AdminSetRecipientPassword):
+    """Admin sets or clears a recipient's portal password."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).where(QuarantineRecipient.id == rid)
+        )
+        r = result.scalar_one_or_none()
+        if not r:
+            raise HTTPException(status_code=404, detail="not found")
+        if not req.password:
+            r.password_hash = None
+        else:
+            if len(req.password) < 8:
+                raise HTTPException(status_code=400, detail="password too short (min 8)")
+            h = await db.execute(
+                text("SELECT crypt(:password, gen_salt('bf')) AS hash"),
+                {"password": req.password},
+            )
+            r.password_hash = h.one().hash
+        await db.commit()
+        return {"ok": True, "has_password": r.password_hash is not None}
 
 
 @app.get("/api/portal/me")
