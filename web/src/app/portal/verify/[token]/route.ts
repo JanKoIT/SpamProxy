@@ -14,13 +14,17 @@ export async function GET(
   });
 
   const setCookie = res.headers.get("set-cookie");
-  // On success (303 redirect) forward user to /portal/quarantine; on failure show error HTML
+  // On success (303 redirect) forward user to /portal/quarantine. We use a
+  // relative Location header (not new URL(..., req.url)) - inside Docker,
+  // req.url is the container URL like http://3ac...:3000, which would
+  // redirect the browser to that unreachable host. A relative Location is
+  // resolved by the browser against the user-facing origin.
   if (res.status === 303 || res.status === 302) {
-    const out = NextResponse.redirect(new URL("/portal/quarantine", _req.url), 303);
+    const headers = new Headers({ Location: "/portal/quarantine" });
     if (setCookie) {
-      out.headers.set("set-cookie", setCookie);
+      headers.set("set-cookie", setCookie);
     }
-    return out;
+    return new NextResponse(null, { status: 303, headers });
   }
   const body = await res.text();
   return new NextResponse(body, {
