@@ -144,7 +144,9 @@ export default function PortalHome() {
                   Login-Link senden
                 </button>
                 <p className="text-center text-xs text-slate-500">
-                  Einmaliger Anmelde-Link an Ihre E-Mail-Adresse. Kein Passwort nötig.
+                  Einmaliger Anmelde-Link an Ihre E-Mail-Adresse. Nach der
+                  Anmeldung können Sie sich selbst ein Passwort setzen für
+                  künftig direkten Login.
                 </p>
               </form>
             ) : (

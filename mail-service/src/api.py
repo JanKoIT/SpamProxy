@@ -3267,6 +3267,7 @@ async def portal_me(spamproxy_portal: str | None = Cookie(default=None)):
             "email": r.email,
             "name": r.name,
             "language": r.language,
+            "has_password": bool(r.password_hash),
         }
 
 

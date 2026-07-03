@@ -15,7 +15,7 @@ type Item = {
   body_preview: string | null;
 };
 
-type Me = { email: string; name: string | null };
+type Me = { email: string; name: string | null; has_password: boolean };
 
 const TABS = [
   { label: "In Quarantäne", value: "pending" },
@@ -114,6 +114,24 @@ export default function PortalQuarantine() {
           </button>
         </div>
       </header>
+
+      {me && !me.has_password && (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm">
+          <div className="flex items-center gap-2 text-blue-200">
+            <KeyRound className="h-4 w-4 shrink-0" />
+            <span>
+              Sie haben noch kein Passwort. Setzen Sie eins, um sich künftig
+              direkt ohne Wartezeit auf die Anmelde-Mail einzuloggen.
+            </span>
+          </div>
+          <Link
+            href="/portal/account"
+            className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+          >
+            Passwort setzen
+          </Link>
+        </div>
+      )}
 
       <div className="mb-4 flex gap-1 rounded-lg bg-slate-900 p-1">
         {TABS.map((t) => (
