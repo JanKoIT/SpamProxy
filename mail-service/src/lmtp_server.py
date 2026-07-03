@@ -11,7 +11,10 @@ from aiosmtpd.lmtp import LMTP
 
 from .config import settings
 from .db import async_session
-from .quarantine.models import MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain, KeywordRule, Setting, Domain
+from .quarantine.models import (
+    MailLog, StatsHourly, AccessList, ScoringRule, SenderDomain,
+    KeywordRule, Setting, Domain, QuarantineRecipient, RecipientAccessList,
+)
 from .quarantine.manager import QuarantineManager, _rspamd_learn
 from .scanning.ai_classifier import AIClassifier
 from sqlalchemy import select
@@ -211,6 +214,11 @@ class ContentFilterHandler:
                 access_action = None
                 if not is_outgoing:
                     access_action = await self._check_access_lists(db, mail_from, client_ip)
+                    if access_action is None:
+                        # No global match - check per-recipient personal lists
+                        access_action = await self._check_personal_access_lists(
+                            db, mail_from, rcpt_to,
+                        )
 
                 # Spoofing detection: inbound mail claiming a local domain is
                 # spoofing UNLESS SPF authorizes the sending IP. External relay
@@ -780,6 +788,40 @@ class ContentFilterHandler:
 
         rw = max(0.0, min(1.0, values["score_rspamd_weight"]))  # clamp to [0, 1]
         return rw, values["ai_confidence_threshold"], values["ai_floor_offset"]
+
+    async def _check_personal_access_lists(self, session, mail_from: str,
+                                            rcpt_to: list[str]) -> str | None:
+        """Check per-recipient personal whitelist/blacklist. If any recipient
+        of this mail has an active entry matching the sender, that verdict
+        wins. Whitelist beats blacklist when both would apply."""
+        if not rcpt_to or not mail_from:
+            return None
+
+        rcpt_lower = [r.lower() for r in rcpt_to]
+        sender_lower = mail_from.lower()
+        sender_domain = mail_from.split("@")[1].lower() if "@" in mail_from else ""
+
+        # Get all personal entries for anyone in rcpt_to
+        result = await session.execute(
+            select(RecipientAccessList, QuarantineRecipient)
+            .join(QuarantineRecipient,
+                  RecipientAccessList.recipient_id == QuarantineRecipient.id)
+            .where(RecipientAccessList.is_active.is_(True))
+            .where(QuarantineRecipient.email.in_(rcpt_lower))
+        )
+        matched_verdict = None
+        for entry, _ in result.all():
+            match = False
+            val = (entry.value or "").lower()
+            if entry.entry_type == "email" and val == sender_lower:
+                match = True
+            elif entry.entry_type == "domain" and sender_domain.endswith(val.lstrip(".")):
+                match = True
+            if match:
+                if entry.list_type == "whitelist":
+                    return "whitelist"  # short-circuit on whitelist
+                matched_verdict = entry.list_type
+        return matched_verdict
 
     async def _check_access_lists(self, session, mail_from: str, client_ip: str) -> str | None:
         """Check whitelist/blacklist. Returns 'whitelist', 'blacklist', or None."""

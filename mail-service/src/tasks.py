@@ -117,13 +117,39 @@ async def ensure_tables():
                 email VARCHAR(255) UNIQUE NOT NULL,
                 name VARCHAR(255),
                 daily_report_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                portal_enabled BOOLEAN NOT NULL DEFAULT TRUE,
                 language VARCHAR(5) NOT NULL DEFAULT 'de',
                 last_report_sent_at TIMESTAMPTZ,
+                last_login_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        # Non-destructive column adds for existing installs
+        await session.execute(text(
+            "ALTER TABLE quarantine_recipients ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN NOT NULL DEFAULT TRUE"
+        ))
+        await session.execute(text(
+            "ALTER TABLE quarantine_recipients ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_quarantine_recipients_email ON quarantine_recipients(LOWER(email))"
+        ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS recipient_access_list (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                recipient_id UUID NOT NULL REFERENCES quarantine_recipients(id) ON DELETE CASCADE,
+                list_type VARCHAR(20) NOT NULL,
+                entry_type VARCHAR(20) NOT NULL,
+                value VARCHAR(255) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """))
         await session.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_quarantine_recipients_email ON quarantine_recipients(LOWER(email))"
+            "CREATE INDEX IF NOT EXISTS idx_recipient_access_recipient ON recipient_access_list(recipient_id)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_recipient_access_value ON recipient_access_list(LOWER(value))"
         ))
         await session.commit()
         logger.info("Database tables verified")

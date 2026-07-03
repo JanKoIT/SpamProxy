@@ -2990,3 +2990,314 @@ p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
             f"{succeeded} von {total} Nachrichten wurden verworfen und rspamd lernt die Muster.{skipped_note}",
             "#dc2626",
         )
+
+
+# --- End-user portal (recipient self-service) ---
+
+from .quarantine.portal_auth import (
+    make_magic_link_token, verify_magic_link_token,
+    make_session_token, verify_session_token,
+    COOKIE_NAME as _PORTAL_COOKIE,
+    SESSION_TTL_SECONDS as _PORTAL_SESSION_TTL,
+)
+from .quarantine.models import RecipientAccessList as _RAL
+from fastapi import Cookie, Response
+
+
+async def _current_portal_recipient(db, cookie_val: str | None) -> QuarantineRecipient | None:
+    if not cookie_val:
+        return None
+    try:
+        email = await verify_session_token(db, cookie_val)
+    except ValueError:
+        return None
+    result = await db.execute(
+        select(QuarantineRecipient).where(
+            QuarantineRecipient.email == email,
+            QuarantineRecipient.portal_enabled.is_(True),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+class PortalLoginRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/portal/request-login")
+async def portal_request_login(req: PortalLoginRequest):
+    """Send a magic-link email if the address is a known recipient. Response
+    is always 200 so we don't leak which emails are registered."""
+    import smtplib
+    from email.message import EmailMessage
+
+    email = req.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="invalid email")
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(QuarantineRecipient).where(
+                QuarantineRecipient.email == email,
+                QuarantineRecipient.portal_enabled.is_(True),
+            )
+        )
+        recipient = result.scalar_one_or_none()
+        if not recipient:
+            return {"ok": True}
+
+        token = await make_magic_link_token(db, email)
+
+        # Load helper settings
+        async def _cfg(key: str, default: str = "") -> str:
+            r = await db.execute(select(Setting).where(Setting.key == key))
+            row = r.scalar_one_or_none()
+            if not row:
+                return default
+            v = row.value
+            return v.strip('"') if isinstance(v, str) else str(v)
+
+        base = await _cfg("public_base_url", "https://spamproxy.example.com")
+        from_addr = await _cfg("daily_report_from", "spamproxy@example.com")
+        company = await _cfg("company_name", "")
+
+        link = f"{base.rstrip('/')}/portal/verify/{token}"
+
+        msg = EmailMessage()
+        msg["From"] = f'"{company} Spamfilter" <{from_addr}>' if company else from_addr
+        msg["To"] = email
+        msg["Subject"] = "Ihr Login-Link zur Spam-Quarantäne"
+        msg["Auto-Submitted"] = "auto-generated"
+        msg.set_content(
+            "Klicken Sie auf den folgenden Link, um sich anzumelden.\n"
+            "Der Link ist 15 Minuten gültig.\n\n"
+            f"{link}\n\n"
+            "Wenn Sie diese E-Mail nicht angefordert haben, können Sie sie ignorieren."
+        )
+        msg.add_alternative(f"""
+<!doctype html>
+<html><body style="font-family:sans-serif;background:#f3f4f6;padding:24px;">
+  <div style="max-width:520px;margin:40px auto;background:#fff;border-radius:12px;padding:32px;border:1px solid #e5e7eb;">
+    <h1 style="margin:0 0 8px;font-size:20px;color:#111827;">Anmeldung zur Spam-Quarantäne</h1>
+    <p style="color:#374151;font-size:14px;">
+      Klicken Sie auf den Button, um sich anzumelden. Der Link ist 15 Minuten gültig.
+    </p>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="{link}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#fff;
+         text-decoration:none;border-radius:8px;font-weight:600;">Jetzt anmelden</a>
+    </p>
+    <p style="font-size:12px;color:#6b7280;word-break:break-all;">
+      Falls der Button nicht funktioniert: {link}
+    </p>
+  </div>
+</body></html>""", subtype="html")
+
+        try:
+            with smtplib.SMTP("postfix", 10025, timeout=30) as smtp:
+                smtp.send_message(msg)
+        except Exception:
+            logger.exception("Failed to send magic-link email")
+
+    return {"ok": True}
+
+
+@app.get("/portal/verify/{token}")
+async def portal_verify(token: str, response: Response):
+    """Redeem magic link, set session cookie, redirect to portal."""
+    from fastapi.responses import RedirectResponse, HTMLResponse
+    async with async_session() as db:
+        try:
+            email = await verify_magic_link_token(db, token)
+        except ValueError as e:
+            return HTMLResponse(
+                f"""<!doctype html><html><body style="font-family:sans-serif;padding:40px;text-align:center;">
+                <h1 style="color:#dc2626;">Link ungültig</h1>
+                <p>Dieser Login-Link ist ungültig oder abgelaufen ({e}).</p>
+                <p><a href="/portal">Neuen Link anfordern</a></p></body></html>""",
+                status_code=400,
+            )
+        # Ensure recipient still exists and is enabled
+        result = await db.execute(
+            select(QuarantineRecipient).where(
+                QuarantineRecipient.email == email,
+                QuarantineRecipient.portal_enabled.is_(True),
+            )
+        )
+        recipient = result.scalar_one_or_none()
+        if not recipient:
+            return HTMLResponse(
+                """<html><body style="font-family:sans-serif;padding:40px;text-align:center;">
+                <h1>Zugang deaktiviert</h1><p>Ihr Zugang wurde deaktiviert.</p></body></html>""",
+                status_code=403,
+            )
+        recipient.last_login_at = datetime.now(timezone.utc)
+        session_tok = await make_session_token(db, email)
+        await db.commit()
+
+    resp = RedirectResponse(url="/portal", status_code=303)
+    resp.set_cookie(
+        _PORTAL_COOKIE, session_tok,
+        max_age=_PORTAL_SESSION_TTL,
+        httponly=True, samesite="lax", path="/",
+    )
+    return resp
+
+
+@app.post("/api/portal/logout")
+async def portal_logout(response: Response):
+    response.delete_cookie(_PORTAL_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/portal/me")
+async def portal_me(spamproxy_portal: str | None = Cookie(default=None)):
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+        return {
+            "email": r.email,
+            "name": r.name,
+            "language": r.language,
+        }
+
+
+@app.get("/api/portal/quarantine")
+async def portal_quarantine(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    status: str = Query("pending"),
+    spamproxy_portal: str | None = Cookie(default=None),
+):
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+
+        base = (
+            select(Quarantine, MailLog)
+            .join(MailLog, Quarantine.mail_log_id == MailLog.id)
+            .where(Quarantine.status == status)
+            .where(MailLog.rcpt_to.any(r.email))
+        )
+        count_q = select(func.count()).select_from(base.subquery())
+        total = (await db.execute(count_q)).scalar() or 0
+        result = await db.execute(
+            base.order_by(desc(Quarantine.created_at))
+            .offset((page - 1) * page_size).limit(page_size)
+        )
+        items = []
+        for q, ml in result.all():
+            items.append({
+                "id": str(q.id),
+                "mail_from": ml.mail_from,
+                "subject": ml.subject,
+                "final_score": ml.final_score,
+                "status": q.status,
+                "created_at": ml.created_at.isoformat() if ml.created_at else None,
+                "body_preview": q.body_preview,
+            })
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@app.post("/api/portal/quarantine/{qid}/action")
+async def portal_quarantine_action(
+    qid: UUID,
+    req: ActionRequest,
+    spamproxy_portal: str | None = Cookie(default=None),
+):
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+        # Verify this quarantine belongs to the user
+        row = await db.execute(
+            select(Quarantine, MailLog)
+            .join(MailLog, Quarantine.mail_log_id == MailLog.id)
+            .where(Quarantine.id == qid)
+            .where(MailLog.rcpt_to.any(r.email))
+        )
+        pair = row.first()
+        if not pair:
+            raise HTTPException(status_code=404, detail="not found")
+        qm = QuarantineManager(db)
+        if req.action == "approve":
+            ok = await qm.approve(qid)
+        elif req.action == "reject":
+            ok = await qm.reject(qid)
+        else:
+            raise HTTPException(status_code=400, detail="invalid action")
+        return {"ok": ok}
+
+
+class PortalAccessListEntry(BaseModel):
+    list_type: str
+    entry_type: str
+    value: str
+
+
+@app.get("/api/portal/access-list")
+async def portal_access_list(spamproxy_portal: str | None = Cookie(default=None)):
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+        result = await db.execute(
+            select(_RAL).where(_RAL.recipient_id == r.id).order_by(_RAL.created_at.desc())
+        )
+        return {"entries": [
+            {
+                "id": str(e.id),
+                "list_type": e.list_type,
+                "entry_type": e.entry_type,
+                "value": e.value,
+                "is_active": e.is_active,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in result.scalars().all()
+        ]}
+
+
+@app.post("/api/portal/access-list")
+async def portal_access_list_add(
+    req: PortalAccessListEntry,
+    spamproxy_portal: str | None = Cookie(default=None),
+):
+    if req.list_type not in ("whitelist", "blacklist"):
+        raise HTTPException(status_code=400, detail="invalid list_type")
+    if req.entry_type not in ("email", "domain"):
+        raise HTTPException(status_code=400, detail="invalid entry_type")
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+        entry = _RAL(
+            recipient_id=r.id,
+            list_type=req.list_type,
+            entry_type=req.entry_type,
+            value=req.value.strip().lower(),
+        )
+        db.add(entry)
+        await db.commit()
+        await db.refresh(entry)
+        return {"id": str(entry.id)}
+
+
+@app.delete("/api/portal/access-list/{entry_id}")
+async def portal_access_list_delete(
+    entry_id: UUID,
+    spamproxy_portal: str | None = Cookie(default=None),
+):
+    async with async_session() as db:
+        r = await _current_portal_recipient(db, spamproxy_portal)
+        if not r:
+            raise HTTPException(status_code=401, detail="not logged in")
+        result = await db.execute(
+            select(_RAL).where(_RAL.id == entry_id, _RAL.recipient_id == r.id)
+        )
+        entry = result.scalar_one_or_none()
+        if not entry:
+            raise HTTPException(status_code=404, detail="not found")
+        await db.delete(entry)
+        await db.commit()
+        return {"ok": True}

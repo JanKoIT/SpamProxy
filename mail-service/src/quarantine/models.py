@@ -235,6 +235,25 @@ class QuarantineRecipient(Base):
     email = Column(String(255), unique=True, nullable=False)
     name = Column(String(255))
     daily_report_enabled = Column(Boolean, nullable=False, default=True)
+    portal_enabled = Column(Boolean, nullable=False, default=True)
     language = Column(String(5), nullable=False, default="de")
     last_report_sent_at = Column(DateTime(timezone=True))
+    last_login_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class RecipientAccessList(Base):
+    """Per-user whitelist/blacklist entries. Overlay on top of the global
+    admin AccessList - if any active recipient of an inbound mail has a
+    matching entry, that verdict wins for their mailbox."""
+    __tablename__ = "recipient_access_list"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recipient_id = Column(UUID(as_uuid=True),
+                          ForeignKey("quarantine_recipients.id", ondelete="CASCADE"),
+                          nullable=False)
+    list_type = Column(String(20), nullable=False)  # whitelist | blacklist
+    entry_type = Column(String(20), nullable=False)  # email | domain
+    value = Column(String(255), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

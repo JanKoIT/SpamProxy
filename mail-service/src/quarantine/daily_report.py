@@ -178,6 +178,13 @@ async def build_report_html(session: AsyncSession, recipient_email: str,
           </table>
         </td></tr>
         {bulk_bar if len(entries) >= 5 else ''}
+        <tr><td style="padding:16px 24px;background:#eff6ff;text-align:center;font-size:13px;">
+          <span style="color:#1e40af;">Sie wollen öfter schauen?</span>
+          <a href="{base_url.rstrip('/')}/portal" style="display:inline-block;margin-left:8px;padding:6px 14px;
+             background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;">
+             Hier anmelden
+          </a>
+        </td></tr>
         <tr><td style="padding:16px 24px;background:#f9fafb;font-size:11px;color:#6b7280;">
           Empfänger: {_esc(recipient_email)} &middot; Links gültig für 7 Tage &middot;
           Nicht aufgeführte Mails werden nach 30 Tagen automatisch verworfen.
