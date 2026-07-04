@@ -157,10 +157,39 @@ async def system_status():
         return {"status": "ok", "detail": "controller + milter responsive"}
 
     async def check_postgres() -> dict:
-        try:
+        # Transient errors during startup / WAL recovery are not "down"
+        # states. Retry once with a short delay before reporting error.
+        import asyncpg.exceptions as _pgexc
+
+        async def _try_once():
             async with async_session() as db:
-                await db.execute(text("SELECT 1"))
+                await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=3.0)
+
+        transient_types = (
+            _pgexc.CannotConnectNowError,
+            _pgexc.PostgresConnectionError,
+            _pgexc.ConnectionDoesNotExistError,
+            _pgexc.InterfaceError,
+            asyncio.TimeoutError,
+        )
+        try:
+            await _try_once()
             return {"status": "ok", "detail": "database responsive"}
+        except transient_types:
+            # Give it a moment and try once more before declaring error
+            await asyncio.sleep(1.0)
+            try:
+                await _try_once()
+                return {"status": "ok", "detail": "database responsive (recovered)"}
+            except _pgexc.CannotConnectNowError:
+                return {"status": "degraded",
+                        "detail": "Postgres startup/recovery in progress"}
+            except transient_types as e:
+                return {"status": "degraded",
+                        "detail": f"Postgres connection issue: {type(e).__name__}"}
+            except Exception as e:
+                return {"status": "error",
+                        "detail": f"db error: {type(e).__name__}"}
         except Exception as e:
             return {"status": "error", "detail": f"db error: {type(e).__name__}"}
 
