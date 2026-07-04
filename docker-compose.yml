@@ -51,11 +51,15 @@ services:
     restart: unless-stopped
     volumes:
       - /etc/localtime:/etc/localtime:ro
+    # Healthcheck via TCP port 53 - "drill" is no longer shipped in
+    # recent mvance/unbound images and its absence took the whole
+    # container down. Fall back to a shell-only port probe.
     healthcheck:
-      test: ["CMD", "drill", "@127.0.0.1", "google.com"]
+      test: ["CMD-SHELL", "timeout 3 sh -c '</dev/tcp/127.0.0.1/53' 2>/dev/null || pgrep -x unbound"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 20s
 
   rspamd:
     build:
