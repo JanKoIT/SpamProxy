@@ -23,9 +23,10 @@ const SERVICE_LABELS: Record<string, string> = {
   unbound: "Unbound (DNS)",
   ai: "AI Classifier",
   host_updates: "Betriebssystem (Updates)",
+  disk_space: "Festplattenspeicher",
 };
 
-const CRITICAL = new Set(["rspamd", "postgres", "postfix"]);
+const CRITICAL = new Set(["rspamd", "postgres", "postfix", "disk_space"]);
 
 function StatusIcon({ status }: { status: string }) {
   switch (status) {

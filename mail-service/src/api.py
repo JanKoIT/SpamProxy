@@ -286,6 +286,29 @@ async def system_status():
             return {"status": "error", "detail": "OpenAI API key not configured"}
         return {"status": "ok", "detail": f"AI provider: {settings.ai_provider} ({settings.ai_model})"}
 
+    async def check_disk_space() -> dict:
+        # Container root FS reflects host disk when using default Docker
+        # overlay2 storage - close enough as an early-warning signal.
+        # Postgres PANIC on "no space left on device" is what this catches.
+        import shutil as _shutil
+        try:
+            usage = _shutil.disk_usage("/")
+            total_gb = usage.total / (1024 ** 3)
+            free_gb = usage.free / (1024 ** 3)
+            pct_free = (usage.free / usage.total) * 100.0 if usage.total else 0.0
+        except Exception as e:
+            return {"status": "unknown", "detail": f"cannot read disk usage: {e}"}
+
+        detail = f"{free_gb:.1f} GB frei von {total_gb:.1f} GB ({pct_free:.0f}%)"
+        if free_gb < 1.0 or pct_free < 3.0:
+            return {"status": "error", "detail": f"KRITISCH: {detail}. Postgres kann jederzeit crashen."}
+        if free_gb < 3.0 or pct_free < 10.0:
+            return {"status": "degraded", "detail": f"Wenig Platz: {detail}"}
+        return {"status": "ok", "detail": detail,
+                "free_gb": round(free_gb, 1),
+                "total_gb": round(total_gb, 1),
+                "percent_free": round(pct_free, 1)}
+
     async def check_host_updates() -> dict:
         # File is written by the host's systemd timer via
         # /usr/local/bin/spamproxy-host-updates and mounted read-only.
@@ -351,10 +374,10 @@ async def system_status():
     results = await asyncio.gather(
         check_rspamd(), check_postgres(), check_redis(),
         check_clamav(), check_postfix(), check_unbound(), check_ai(),
-        check_host_updates(),
+        check_host_updates(), check_disk_space(),
         return_exceptions=True,
     )
-    names = ["rspamd", "postgres", "redis", "clamav", "postfix", "unbound", "ai", "host_updates"]
+    names = ["rspamd", "postgres", "redis", "clamav", "postfix", "unbound", "ai", "host_updates", "disk_space"]
     services = {}
     for name, result in zip(names, results):
         if isinstance(result, Exception):

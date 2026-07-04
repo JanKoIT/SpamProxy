@@ -1,7 +1,18 @@
+x-logging: &default-logging
+  # Cap docker json-log at 3x50MB per container so unrotated logs can't
+  # fill the disk and starve postgres of write space (the WAL/checkpoint
+  # PANIC after "no space left on device" is the exact scenario this
+  # prevents).
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-spamproxy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
@@ -20,6 +31,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - redis_data:/data
       - /etc/localtime:/etc/localtime:ro
@@ -34,6 +46,7 @@ services:
   clamav:
     image: clamav/clamav:latest
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - clamav_data:/var/lib/clamav
       - /etc/localtime:/etc/localtime:ro
@@ -49,6 +62,7 @@ services:
   unbound:
     image: mvance/unbound:latest
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - /etc/localtime:/etc/localtime:ro
     # Healthcheck via TCP port 53 - "drill" is no longer shipped in
@@ -66,6 +80,7 @@ services:
       context: ./docker/rspamd
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./docker/rspamd/local.d:/etc/rspamd/local.d
       - rspamd_data:/var/lib/rspamd
@@ -101,6 +116,7 @@ services:
       context: ./docker/postfix
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     environment:
       PROXY_HOSTNAME: ${PROXY_HOSTNAME:-proxy.example.com}
       POSTGRES_USER: ${POSTGRES_USER:-spamproxy}
@@ -139,6 +155,7 @@ services:
       context: ./mail-service
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - postfix_logs:/var/log/postfix:ro
       - dkim_keys:/var/lib/rspamd/dkim
@@ -181,6 +198,7 @@ services:
       context: ./web
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-spamproxy}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-spamproxy}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-generate-a-secret-here}
@@ -205,6 +223,7 @@ services:
   autoheal:
     image: willfarrell/autoheal:latest
     restart: unless-stopped
+    logging: *default-logging
     environment:
       AUTOHEAL_CONTAINER_LABEL: autoheal
       AUTOHEAL_INTERVAL: 10
