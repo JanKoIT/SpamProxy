@@ -42,6 +42,20 @@ if [ ! -f /etc/ssl/certs/postfix.pem ]; then
     chmod 600 /etc/ssl/private/postfix.key
 fi
 
+# Suppress the "dict_nis_init: NIS domain name not set" warning by
+# stripping "nis:" from every *_maps entry. Debian's postfix build
+# includes NIS lookup support and its defaults reference it, but we
+# never use NIS - so it just floods the log on every smtpd start.
+for KEY in alias_maps alias_database local_recipient_maps virtual_alias_maps \
+           mailbox_command mailbox_command_maps smtpd_sender_login_maps \
+           smtpd_sender_restrictions relocated_maps; do
+    CUR=$(postconf -h "$KEY" 2>/dev/null || true)
+    if echo "$CUR" | grep -q "nis:"; then
+        NEW=$(echo "$CUR" | sed -E 's/,?\s*nis:[^,[:space:]]*//g; s/^\s*,\s*//; s/\s*,\s*$//')
+        postconf -e "$KEY=$NEW"
+    fi
+done
+
 # Create required directories
 mkdir -p /var/spool/postfix/pid
 chown -R postfix:postfix /var/spool/postfix
