@@ -197,23 +197,41 @@ async def system_status():
                 "detail": "postfix SMTP reachable" if ok else "postfix SMTP unreachable"}
 
     async def check_unbound() -> dict:
-        # Resolve "unbound" hostname via Docker DNS, then issue a real
-        # DNS query against that IP. socket.gethostbyname can fail in
-        # async contexts - use asyncio's getaddrinfo instead.
-        try:
-            loop = asyncio.get_running_loop()
-            addrinfo = await asyncio.wait_for(
-                loop.getaddrinfo("unbound", 53, type=socket.SOCK_DGRAM),
-                timeout=3.0,
-            )
-            if not addrinfo:
-                return {"status": "error", "detail": "unbound hostname did not resolve"}
-            unbound_ip = addrinfo[0][4][0]
-        except Exception as e:
-            return {"status": "error",
-                    "detail": f"cannot resolve unbound hostname: {type(e).__name__}"}
+        # Try multiple ways to reach the unbound container. Docker's built-in
+        # DNS on 127.0.0.11 sometimes returns gaierror for compose service
+        # names when the container is restarting or if resolv.conf hasn't
+        # picked up the update yet.
+        def _sync_resolve() -> tuple[str, str] | None:
+            """Try synchronous hostname → IP resolution over multiple names.
+            Returns (name, ip) on first success."""
+            candidates = ["unbound"]
+            # Docker Compose v2 naming pattern: <project>-<service>-<n>
+            import os as _os
+            project = _os.environ.get("COMPOSE_PROJECT_NAME", "spamproxy")
+            candidates.extend([
+                f"{project}-unbound-1",
+                f"{project}_unbound_1",
+            ])
+            for name in candidates:
+                try:
+                    ip = socket.gethostbyname(name)
+                    return name, ip
+                except socket.gaierror:
+                    continue
+            return None
 
-        def _resolve(nameserver: str):
+        resolved = await asyncio.wait_for(
+            asyncio.to_thread(_sync_resolve), timeout=5.0
+        )
+        if not resolved:
+            return {
+                "status": "error",
+                "detail": ("unbound container not reachable in Docker network. "
+                           "Check 'docker compose ps unbound' - is it running?"),
+            }
+        name, unbound_ip = resolved
+
+        def _dns_query(nameserver: str):
             import dns.resolver
             resolver = dns.resolver.Resolver(configure=False)
             resolver.nameservers = [nameserver]
@@ -221,14 +239,16 @@ async def system_status():
             resolver.lifetime = 3.0
             resolver.resolve("dns.google", "A")
             return True
+
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(_resolve, unbound_ip), timeout=5.0
+                asyncio.to_thread(_dns_query, unbound_ip), timeout=5.0
             )
-            return {"status": "ok", "detail": f"unbound DNS resolving ({unbound_ip})"}
+            return {"status": "ok",
+                    "detail": f"unbound DNS resolving ({name} @ {unbound_ip})"}
         except Exception as e:
             return {"status": "error",
-                    "detail": f"unbound DNS query failed: {type(e).__name__}"}
+                    "detail": f"unbound found at {unbound_ip} but query failed: {type(e).__name__}"}
 
     async def check_ai() -> dict:
         if not settings.ai_enabled:
