@@ -1,0 +1,10 @@
+[Unit]
+Description=SpamProxy: probe host OS update status
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spamproxy-host-updates
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

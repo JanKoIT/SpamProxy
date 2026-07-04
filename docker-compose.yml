@@ -141,6 +141,9 @@ services:
       - bayes_training:/var/lib/spamproxy/bayes-training
       - rspamd_keypairs:/etc/rspamd/keypairs
       - /etc/localtime:/etc/localtime:ro
+      # Host-updates JSON written by /usr/local/bin/spamproxy-host-updates
+      # via systemd timer. Mount is read-only; container never writes here.
+      - /var/lib/spamproxy:/host-status:ro
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-spamproxy}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-spamproxy}
       RSPAMD_URL: ${RSPAMD_URL:-http://rspamd:11333}

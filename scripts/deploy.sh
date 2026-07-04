@@ -369,14 +369,43 @@ status() {
 }
 
 # ─── Main ────────────────────────────────────────────────────────
+install_host_updates() {
+    log "Installing host OS update probe (systemd timer, hourly)"
+    SCRIPT_SRC="$(dirname "$(readlink -f "$0")")/host-updates.sh"
+    SERVICE_SRC="$(dirname "$(readlink -f "$0")")/host-updates.service"
+    TIMER_SRC="$(dirname "$(readlink -f "$0")")/host-updates.timer"
+
+    if [ ! -f "$SCRIPT_SRC" ]; then
+        error "host-updates.sh not found at $SCRIPT_SRC"
+    fi
+
+    sudo install -m 755 "$SCRIPT_SRC" /usr/local/bin/spamproxy-host-updates
+    sudo install -m 644 "$SERVICE_SRC" /etc/systemd/system/spamproxy-host-updates.service
+    sudo install -m 644 "$TIMER_SRC" /etc/systemd/system/spamproxy-host-updates.timer
+    sudo mkdir -p /var/lib/spamproxy
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now spamproxy-host-updates.timer
+
+    log "Running probe once now..."
+    sudo /usr/local/bin/spamproxy-host-updates || true
+    if [ -f /var/lib/spamproxy/host-updates.json ]; then
+        log "Wrote /var/lib/spamproxy/host-updates.json:"
+        cat /var/lib/spamproxy/host-updates.json
+    fi
+
+    log "Restart mail-service so the new volume mount is picked up"
+    $COMPOSE up -d mail-service
+}
+
 case "${1:-help}" in
-    first-install)      first_install ;;
-    update)             update ;;
-    rollback)           rollback "${2:-}" ;;
-    status)             status ;;
-    federation-add)     federation_add_peer "${2:-}" "${3:-peer}" ;;
-    federation-remove)  federation_remove_peer "${2:-}" ;;
-    federation-list)    federation_list ;;
+    first-install)          first_install; install_host_updates ;;
+    update)                 update ;;
+    rollback)               rollback "${2:-}" ;;
+    status)                 status ;;
+    install-host-updates)   install_host_updates ;;
+    federation-add)         federation_add_peer "${2:-}" "${3:-peer}" ;;
+    federation-remove)      federation_remove_peer "${2:-}" ;;
+    federation-list)        federation_list ;;
     backup)
         mkdir -p backups
         BACKUP_FILE="backups/spamproxy_$(date +%Y%m%d_%H%M%S).sql"
@@ -398,6 +427,8 @@ case "${1:-help}" in
         echo "  backup                   Manual database backup"
         echo "  status                   Show service status"
         echo "  logs [service]           Show logs (e.g. logs postfix)"
+        echo "  install-host-updates     Install systemd timer that probes"
+        echo "                           host OS updates hourly"
         echo ""
         echo "Federation:"
         echo "  federation-add IP [NAME] Add peer (firewall + Nginx)"

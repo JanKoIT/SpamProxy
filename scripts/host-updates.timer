@@ -1,0 +1,13 @@
+[Unit]
+Description=SpamProxy: run host-updates check hourly
+
+[Timer]
+# First run 5 minutes after boot, then every hour with a 10-minute jitter
+# so simultaneous VPS reboots don't hammer apt mirrors at the same second.
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

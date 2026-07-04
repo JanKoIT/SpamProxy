@@ -22,6 +22,7 @@ const SERVICE_LABELS: Record<string, string> = {
   postfix: "Postfix (SMTP)",
   unbound: "Unbound (DNS)",
   ai: "AI Classifier",
+  host_updates: "Betriebssystem (Updates)",
 };
 
 const CRITICAL = new Set(["rspamd", "postgres", "postfix"]);
@@ -35,6 +36,7 @@ function StatusIcon({ status }: { status: string }) {
     case "error":
       return <XCircle className="h-4 w-4 text-red-400" />;
     case "disabled":
+    case "unknown":
       return <MinusCircle className="h-4 w-4 text-slate-500" />;
     default:
       return <Loader2 className="h-4 w-4 animate-spin text-slate-500" />;

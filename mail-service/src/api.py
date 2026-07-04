@@ -237,13 +237,75 @@ async def system_status():
             return {"status": "error", "detail": "OpenAI API key not configured"}
         return {"status": "ok", "detail": f"AI provider: {settings.ai_provider} ({settings.ai_model})"}
 
+    async def check_host_updates() -> dict:
+        # File is written by the host's systemd timer via
+        # /usr/local/bin/spamproxy-host-updates and mounted read-only.
+        import json as _json
+        import os as _os
+        status_file = "/host-status/host-updates.json"
+        if not _os.path.exists(status_file):
+            return {
+                "status": "unknown",
+                "detail": "Host update probe not installed (run deploy.sh install-host-updates)",
+            }
+        try:
+            with open(status_file, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+        except Exception as e:
+            return {"status": "error", "detail": f"cannot read host-updates.json: {e}"}
+
+        checked = data.get("checked_at", "unknown")
+        total = int(data.get("total_updates", 0))
+        security = int(data.get("security_updates", 0))
+        reboot = bool(data.get("reboot_required", False))
+        distro = data.get("distro", "unknown")
+
+        # Stale probe (>36h)? Report as degraded so user knows the check
+        # itself isn't running anymore.
+        stale = False
+        try:
+            from datetime import datetime as _dt
+            checked_dt = _dt.fromisoformat(checked.replace("Z", "+00:00"))
+            age_h = (datetime.now(timezone.utc) - checked_dt).total_seconds() / 3600.0
+            stale = age_h > 36
+        except Exception:
+            pass
+
+        if reboot or security > 0:
+            status = "degraded"
+        elif total > 0 or stale:
+            status = "degraded" if stale else "ok"
+        else:
+            status = "ok"
+
+        detail_bits = [distro]
+        if security > 0:
+            detail_bits.append(f"{security} Security-Updates")
+        if total > 0:
+            detail_bits.append(f"{total} Updates gesamt")
+        if reboot:
+            detail_bits.append("Neustart erforderlich")
+        if stale:
+            detail_bits.append(f"Check veraltet (>36h)")
+        if not detail_bits[1:]:
+            detail_bits.append("aktuell")
+        return {
+            "status": status,
+            "detail": " · ".join(detail_bits),
+            "total_updates": total,
+            "security_updates": security,
+            "reboot_required": reboot,
+            "checked_at": checked,
+        }
+
     # Run all checks in parallel
     results = await asyncio.gather(
         check_rspamd(), check_postgres(), check_redis(),
         check_clamav(), check_postfix(), check_unbound(), check_ai(),
+        check_host_updates(),
         return_exceptions=True,
     )
-    names = ["rspamd", "postgres", "redis", "clamav", "postfix", "unbound", "ai"]
+    names = ["rspamd", "postgres", "redis", "clamav", "postfix", "unbound", "ai", "host_updates"]
     services = {}
     for name, result in zip(names, results):
         if isinstance(result, Exception):
