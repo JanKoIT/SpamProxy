@@ -49,8 +49,9 @@ export default function ReportSettingsPage() {
       const res = await fetch("/api/settings", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.settings ?? []);
         const next: Record<string, unknown> = {};
-        for (const s of data.settings ?? []) {
+        for (const s of list) {
           next[s.key] = s.value;
         }
         setValues(next);
