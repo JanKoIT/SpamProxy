@@ -478,6 +478,157 @@ async def login(req: LoginRequest):
         }
 
 
+# --- Admin User Management ---
+
+ALLOWED_ROLES = {"admin", "viewer"}
+_MIN_PASSWORD_LEN = 8
+
+
+class UserCreate(BaseModel):
+    email: str
+    name: str
+    password: str
+    role: str = "viewer"
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = None  # None/empty = keep current
+
+
+async def _count_active_admins(session, exclude_id: UUID | None = None) -> int:
+    q = select(func.count()).select_from(User).where(
+        User.role == "admin", User.is_active.is_(True)
+    )
+    if exclude_id is not None:
+        q = q.where(User.id != exclude_id)
+    return (await session.execute(q)).scalar_one()
+
+
+async def _hash_password(session, password: str) -> str:
+    row = await session.execute(
+        text("SELECT crypt(:password, gen_salt('bf')) AS hash"),
+        {"password": password},
+    )
+    return row.one().hash
+
+
+def _user_dto(u: User) -> dict:
+    return {
+        "id": str(u.id),
+        "email": u.email,
+        "name": u.name,
+        "role": u.role,
+        "is_active": u.is_active,
+        "created_at": str(u.created_at),
+    }
+
+
+@app.get("/api/users")
+async def list_users():
+    async with async_session() as session:
+        result = await session.execute(select(User).order_by(User.email))
+        return [_user_dto(u) for u in result.scalars()]
+
+
+@app.post("/api/users")
+async def create_user(req: UserCreate):
+    if req.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if not req.password or len(req.password) < _MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {_MIN_PASSWORD_LEN} characters",
+        )
+    email = req.email.strip()
+    name = req.name.strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+
+    async with async_session() as session:
+        existing = await session.execute(
+            select(User).where(func.lower(User.email) == email.lower())
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email already exists")
+
+        user = User(
+            email=email,
+            name=name,
+            password_hash=await _hash_password(session, req.password),
+            role=req.role,
+            is_active=req.is_active,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return _user_dto(user)
+
+
+@app.put("/api/users/{user_id}")
+async def update_user(user_id: UUID, req: UserUpdate):
+    if req.role is not None and req.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if req.password is not None and req.password != "" and len(req.password) < _MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {_MIN_PASSWORD_LEN} characters",
+        )
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Lockout guard: never let the last active admin lose admin access.
+        new_role = req.role if req.role is not None else user.role
+        new_active = req.is_active if req.is_active is not None else user.is_active
+        was_active_admin = user.role == "admin" and user.is_active
+        stays_active_admin = new_role == "admin" and new_active
+        if was_active_admin and not stays_active_admin:
+            if await _count_active_admins(session, exclude_id=user.id) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot remove the last active administrator",
+                )
+
+        if req.name is not None:
+            user.name = req.name.strip()
+        if req.role is not None:
+            user.role = req.role
+        if req.is_active is not None:
+            user.is_active = req.is_active
+        if req.password:
+            user.password_hash = await _hash_password(session, req.password)
+        user.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+        return _user_dto(user)
+
+
+@app.delete("/api/users/{user_id}")
+async def delete_user(user_id: UUID):
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if user.role == "admin" and user.is_active:
+            if await _count_active_admins(session, exclude_id=user.id) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete the last active administrator",
+                )
+        await session.delete(user)
+        await session.commit()
+        return {"status": "ok"}
+
+
 # --- AI Scan Endpoint (called by rspamd) ---
 
 class AIScanRequest(BaseModel):

@@ -97,6 +97,7 @@ SpamProxy is placed as MX in front of your actual mail server and filters both i
 - **Mail queue** viewer with requeue/delete/hold actions
 - **Delivery status** tracking (bounces, deferrals from Postfix log)
 - **Outgoing auth management** (SMTP credentials)
+- **User management** (multiple login accounts with admin/viewer roles; viewers are read-only, admin-only page and API, last-admin lockout protection)
 - **Scanner clients** (manage remote scan clients with keypair generation)
 - **Federation** (manage rspamd peers)
 - **Demo mode** for screenshots without real data
