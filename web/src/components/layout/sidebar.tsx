@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   ShieldAlert,
@@ -27,9 +29,13 @@ import {
   Server,
   Activity,
   UserCheck,
+  Link2,
+  UserCog,
 } from "lucide-react";
 
-const navItems = [
+type NavItem = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean };
+
+const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/quarantine", label: "Quarantine", icon: ShieldAlert },
   { href: "/recipients", label: "Recipients", icon: UserCheck },
@@ -48,7 +54,9 @@ const navItems = [
   { href: "/settings/bayes", label: "Bayes Training", icon: Database },
   { href: "/settings/ai-test", label: "AI Test", icon: Brain },
   { href: "/settings/reports", label: "Reports & Footer", icon: Mail },
+  { href: "/settings/safelinks", label: "Safe Links", icon: Link2 },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings/users", label: "Benutzer", icon: UserCog, adminOnly: true },
   { href: "/users", label: "Outgoing Auth", icon: Users },
   { href: "/settings/sender-domains", label: "Sender Domains", icon: Send },
   { href: "/settings/federation", label: "Federation", icon: Network },
@@ -57,7 +65,11 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const [collapsed, setCollapsed] = useState(false);
+
+  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <aside
@@ -77,7 +89,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {visibleItems.map(({ href, label, icon: Icon }) => {
           const isActive =
             pathname === href || pathname.startsWith(href + "/");
 

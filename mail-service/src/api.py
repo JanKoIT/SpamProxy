@@ -1,3 +1,4 @@
+import asyncio
 import email as email_lib
 import email.utils
 import logging
@@ -475,6 +476,157 @@ async def login(req: LoginRequest):
             "name": user.name,
             "role": user.role,
         }
+
+
+# --- Admin User Management ---
+
+ALLOWED_ROLES = {"admin", "viewer"}
+_MIN_PASSWORD_LEN = 8
+
+
+class UserCreate(BaseModel):
+    email: str
+    name: str
+    password: str
+    role: str = "viewer"
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = None  # None/empty = keep current
+
+
+async def _count_active_admins(session, exclude_id: UUID | None = None) -> int:
+    q = select(func.count()).select_from(User).where(
+        User.role == "admin", User.is_active.is_(True)
+    )
+    if exclude_id is not None:
+        q = q.where(User.id != exclude_id)
+    return (await session.execute(q)).scalar_one()
+
+
+async def _hash_password(session, password: str) -> str:
+    row = await session.execute(
+        text("SELECT crypt(:password, gen_salt('bf')) AS hash"),
+        {"password": password},
+    )
+    return row.one().hash
+
+
+def _user_dto(u: User) -> dict:
+    return {
+        "id": str(u.id),
+        "email": u.email,
+        "name": u.name,
+        "role": u.role,
+        "is_active": u.is_active,
+        "created_at": str(u.created_at),
+    }
+
+
+@app.get("/api/users")
+async def list_users():
+    async with async_session() as session:
+        result = await session.execute(select(User).order_by(User.email))
+        return [_user_dto(u) for u in result.scalars()]
+
+
+@app.post("/api/users")
+async def create_user(req: UserCreate):
+    if req.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if not req.password or len(req.password) < _MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {_MIN_PASSWORD_LEN} characters",
+        )
+    email = req.email.strip()
+    name = req.name.strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+
+    async with async_session() as session:
+        existing = await session.execute(
+            select(User).where(func.lower(User.email) == email.lower())
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email already exists")
+
+        user = User(
+            email=email,
+            name=name,
+            password_hash=await _hash_password(session, req.password),
+            role=req.role,
+            is_active=req.is_active,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return _user_dto(user)
+
+
+@app.put("/api/users/{user_id}")
+async def update_user(user_id: UUID, req: UserUpdate):
+    if req.role is not None and req.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if req.password is not None and req.password != "" and len(req.password) < _MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {_MIN_PASSWORD_LEN} characters",
+        )
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Lockout guard: never let the last active admin lose admin access.
+        new_role = req.role if req.role is not None else user.role
+        new_active = req.is_active if req.is_active is not None else user.is_active
+        was_active_admin = user.role == "admin" and user.is_active
+        stays_active_admin = new_role == "admin" and new_active
+        if was_active_admin and not stays_active_admin:
+            if await _count_active_admins(session, exclude_id=user.id) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot remove the last active administrator",
+                )
+
+        if req.name is not None:
+            user.name = req.name.strip()
+        if req.role is not None:
+            user.role = req.role
+        if req.is_active is not None:
+            user.is_active = req.is_active
+        if req.password:
+            user.password_hash = await _hash_password(session, req.password)
+        user.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+        return _user_dto(user)
+
+
+@app.delete("/api/users/{user_id}")
+async def delete_user(user_id: UUID):
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if user.role == "admin" and user.is_active:
+            if await _count_active_admins(session, exclude_id=user.id) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete the last active administrator",
+                )
+        await session.delete(user)
+        await session.commit()
+        return {"status": "ok"}
 
 
 # --- AI Scan Endpoint (called by rspamd) ---
@@ -3125,6 +3277,315 @@ p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
             f"{succeeded} von {total} Nachrichten wurden verworfen und rspamd lernt die Muster.{skipped_note}",
             "#dc2626",
         )
+
+
+# --- Safe Links (click-time URL protection) ---
+
+from .safelinks.tokens import verify_link_token as _verify_link_token
+
+
+async def _safelinks_get(db, keys: list[str]) -> dict:
+    result = await db.execute(select(Setting).where(Setting.key.in_(keys)))
+    return {s.key: s.value for s in result.scalars()}
+
+
+def _surbl_listed(host: str) -> str | None:
+    """Return the name of the first blocklist that lists `host`, or None.
+    Runs blocking DNS lookups - call via asyncio.to_thread."""
+    try:
+        import dns.resolver
+    except Exception:
+        return None
+    host = host.strip(".").lower()
+    if not host or host.replace(".", "").isdigit():
+        return None  # skip bare IPs
+    resolver = dns.resolver.Resolver()
+    resolver.lifetime = 3.0
+    resolver.timeout = 3.0
+    checks = [("dbl.spamhaus.org", "Spamhaus DBL"), ("multi.surbl.org", "SURBL")]
+    for zone, label in checks:
+        try:
+            answers = resolver.resolve(f"{host}.{zone}", "A")
+            for a in answers:
+                # 127.0.0.1 is the "test point" / not-really-listed sentinel.
+                if str(a).startswith("127.0.") and str(a) != "127.0.0.1":
+                    return label
+        except Exception:
+            continue
+    return None
+
+
+async def _reputation_of(db, url: str, check_surbl: bool) -> tuple[str, str]:
+    """Reputation check for a single URL: admin blacklist + optional SURBL/DBL.
+    Returns (verdict, reason); verdict is clean|suspicious|malicious."""
+    from urllib.parse import urlsplit
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return "suspicious", "URL nicht interpretierbar"
+    if not host:
+        return "suspicious", "Kein Host in der URL"
+
+    # Admin blacklist (domain + url entries).
+    result = await db.execute(
+        select(AccessList).where(
+            AccessList.list_type == "blacklist",
+            AccessList.is_active.is_(True),
+        )
+    )
+    for entry in result.scalars():
+        val = (entry.value or "").lower().strip()
+        if not val:
+            continue
+        if entry.entry_type == "domain":
+            if host == val or host.endswith("." + val):
+                return "malicious", f"Domain steht auf der Blacklist ({val})"
+        elif entry.entry_type == "url":
+            if val in url.lower():
+                return "malicious", "URL steht auf der Blacklist"
+
+    if check_surbl:
+        listed = await asyncio.to_thread(_surbl_listed, host)
+        if listed:
+            return "malicious", f"Domain in Spam-URL-Blocklist gelistet ({listed})"
+
+    return "clean", "Keine Auffälligkeiten"
+
+
+async def _safelinks_check_url(db, url: str, opts: dict) -> tuple[str, str, str]:
+    """Classify a destination URL through all enabled layers. Returns
+    (verdict, reason, final_url) where final_url is the URL after following
+    redirects (== url if resolution is off or nothing changed)."""
+    from .safelinks.scanner import (
+        resolve_final_url, google_safe_browsing_lookup, virustotal_lookup,
+    )
+
+    # 1. Reputation of the URL as written in the mail.
+    verdict, reason = await _reputation_of(db, url, opts.get("check_surbl", False))
+    if verdict == "malicious":
+        return verdict, reason, url
+
+    # 2. Optional: follow redirects to the real destination (anti-cloaking).
+    final_url = url
+    if opts.get("resolve_redirects"):
+        resolved, status = await resolve_final_url(url)
+        if status == "blocked-nonpublic":
+            return ("malicious",
+                    "Weiterleitung auf ein nicht-öffentliches Ziel "
+                    "(mögliches SSRF/Phishing)", resolved)
+        if resolved and resolved != url:
+            final_url = resolved
+            rep2, reason2 = await _reputation_of(db, final_url, opts.get("check_surbl", False))
+            if rep2 == "malicious":
+                return "malicious", f"Weiterleitungsziel: {reason2}", final_url
+
+    # 3. Optional: real threat scans on original + final URL. Malicious from any
+    #    engine blocks immediately; a VirusTotal "suspicious" only flags.
+    candidates = list(dict.fromkeys([url, final_url]))
+    if opts.get("scan_sb") and opts.get("sb_api_key"):
+        for candidate in candidates:
+            listed, sb_reason = await google_safe_browsing_lookup(
+                candidate, opts["sb_api_key"]
+            )
+            if listed:
+                return "malicious", f"Google Safe Browsing: {sb_reason}", candidate
+
+    if opts.get("scan_vt") and opts.get("vt_api_key"):
+        for candidate in candidates:
+            vt_verdict, vt_reason = await virustotal_lookup(
+                candidate, opts["vt_api_key"], opts.get("vt_min", 2)
+            )
+            if vt_verdict == "malicious":
+                return "malicious", f"VirusTotal: {vt_reason}", candidate
+            if vt_verdict == "suspicious" and verdict == "clean":
+                verdict, reason = "suspicious", f"VirusTotal: {vt_reason}"
+
+    return verdict, reason, final_url
+
+
+async def _log_safelink_click(db, url: str, host: str, verdict: str, proceeded: bool):
+    try:
+        await db.execute(
+            text(
+                "INSERT INTO safelink_clicks (url, host, verdict, proceeded) "
+                "VALUES (:u, :h, :v, :p)"
+            ),
+            {"u": url[:2048], "h": host[:255], "v": verdict, "p": proceeded},
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("Failed to log safelink click")
+
+
+def _safelinks_page(title: str, body_html: str, accent: str, status: int = 200):
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(f"""<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>{title}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f4f6;margin:0;padding:24px;}}
+.card{{max-width:520px;margin:64px auto;background:#fff;border-radius:12px;padding:32px;
+       border:1px solid #e5e7eb;box-shadow:0 4px 12px rgba(0,0,0,.05);}}
+h1{{margin:0 0 12px;font-size:20px;color:{accent};}}
+p{{color:#374151;font-size:14px;line-height:1.55;margin:8px 0;}}
+.dest{{display:block;word-break:break-all;background:#f9fafb;border:1px solid #e5e7eb;
+       border-radius:8px;padding:10px 12px;font-size:13px;color:#111827;margin:16px 0;}}
+.btn{{display:inline-block;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;
+      text-decoration:none;color:#fff;background:{accent};}}
+.btn.secondary{{background:#6b7280;}}
+.warn{{background:#fef2f2;border-color:#fecaca;color:#991b1b;}}
+.muted{{color:#6b7280;font-size:12px;margin-top:20px;}}
+</style></head><body>
+<div class="card">{body_html}</div>
+</body></html>""", status_code=status)
+
+
+@app.get("/l/{token}")
+async def safelinks_redirect(token: str):
+    """Click-time protected link target. Verifies the signed token, checks the
+    destination's reputation, and shows an interstitial (or blocks). The
+    HMAC-signed token IS the authorization; no login required."""
+    import html as _html
+    from fastapi.responses import RedirectResponse
+    from urllib.parse import urlsplit
+
+    async with async_session() as db:
+        vals = await _safelinks_get(db, [
+            "safelinks_mode", "safelinks_check_surbl",
+            "safelinks_scan_google_sb", "safelinks_google_sb_api_key",
+            "safelinks_scan_virustotal", "safelinks_virustotal_api_key",
+            "safelinks_virustotal_min_detections",
+            "safelinks_resolve_redirects",
+            "safelinks_interstitial_title", "safelinks_interstitial_text",
+            "safelinks_button_label", "safelinks_block_title", "safelinks_block_text",
+        ])
+        mode = str(vals.get("safelinks_mode") or "interstitial").strip('"')
+
+        def _flag(key: str) -> bool:
+            return vals.get(key) is True or vals.get(key) == "true"
+
+        try:
+            vt_min = int(vals.get("safelinks_virustotal_min_detections") or 2)
+        except (ValueError, TypeError):
+            vt_min = 2
+        opts = {
+            "check_surbl": _flag("safelinks_check_surbl"),
+            "scan_sb": _flag("safelinks_scan_google_sb"),
+            "sb_api_key": str(vals.get("safelinks_google_sb_api_key") or "").strip('"').strip(),
+            "scan_vt": _flag("safelinks_scan_virustotal"),
+            "vt_api_key": str(vals.get("safelinks_virustotal_api_key") or "").strip('"').strip(),
+            "vt_min": vt_min,
+            "resolve_redirects": _flag("safelinks_resolve_redirects"),
+        }
+
+        def _txt(key: str, default: str) -> str:
+            v = vals.get(key)
+            v = "" if v is None else str(v).strip('"').strip()
+            return v or default
+        secret = ""
+        srow = await db.execute(select(Setting).where(Setting.key == "report_token_secret"))
+        s = srow.scalar_one_or_none()
+        if s and s.value:
+            secret = str(s.value).strip('"')
+
+        try:
+            url = _verify_link_token(token, secret)
+        except ValueError:
+            return _safelinks_page(
+                "Link ungültig",
+                "<h1>Link ungültig oder abgelaufen</h1>"
+                "<p>Dieser geschützte Link ist nicht mehr gültig. Bitte öffnen "
+                "Sie die ursprüngliche E-Mail erneut.</p>",
+                "#dc2626", status=400,
+            )
+
+        host = (urlsplit(url).hostname or "").lower()
+        verdict, reason, final_url = await _safelinks_check_url(db, url, opts)
+        safe_url = _html.escape(url, quote=True)
+
+        if verdict == "malicious":
+            await _log_safelink_click(db, url, host, verdict, proceeded=False)
+            block_title = _txt("safelinks_block_title", "Gefährlicher Link blockiert")
+            block_text = _txt(
+                "safelinks_block_text",
+                "SpamProxy hat das Ziel dieses Links als gefährlich eingestuft "
+                "und den Zugriff blockiert.",
+            )
+            return _safelinks_page(
+                "Zugriff blockiert",
+                f"<h1>⛔ {_html.escape(block_title)}</h1>"
+                f"<p>{_html.escape(block_text)}</p>"
+                f"<p><strong>Grund:</strong> {_html.escape(reason)}</p>"
+                f"<span class='dest warn'>{safe_url}</span>"
+                f"<p class='muted'>Wenn Sie sicher sind, dass diese Seite "
+                f"vertrauenswürdig ist, wenden Sie sich an Ihren "
+                f"Administrator.</p>",
+                "#dc2626", status=200,
+            )
+
+        # clean or suspicious: interstitial mode always shows the destination.
+        if mode == "silent" and verdict == "clean":
+            await _log_safelink_click(db, url, host, verdict, proceeded=True)
+            return RedirectResponse(url, status_code=302)
+
+        await _log_safelink_click(db, url, host, verdict, proceeded=False)
+        warn = ""
+        if verdict == "suspicious":
+            warn = (f"<p><strong>Hinweis:</strong> {_html.escape(reason)}</p>")
+        title = _txt("safelinks_interstitial_title", "Sie verlassen den geschützten Bereich")
+        intro = _txt(
+            "safelinks_interstitial_text",
+            "Sie werden zu folgender Adresse weitergeleitet. Bitte prüfen Sie, "
+            "ob das Ziel Ihren Erwartungen entspricht:",
+        )
+        button = _txt("safelinks_button_label", "Weiter zur Seite")
+        redirect_note = ""
+        if final_url and final_url != url:
+            redirect_note = (
+                f"<p><strong>Weiterleitung erkannt.</strong> Tatsächliches Ziel:</p>"
+                f"<span class='dest'>{_html.escape(final_url, quote=True)}</span>"
+            )
+        return _safelinks_page(
+            "Sicherer Link",
+            f"<h1>🔗 {_html.escape(title)}</h1>"
+            f"<p>{_html.escape(intro)}</p>"
+            f"<span class='dest'>{safe_url}</span>"
+            f"{redirect_note}"
+            f"{warn}"
+            f"<p><a class='btn' href='{safe_url}' rel='noopener noreferrer'>"
+            f"{_html.escape(button)}</a></p>"
+            f"<p class='muted'>Dieser Link wurde von SpamProxy auf Bedrohungen "
+            f"geprüft.</p>",
+            "#2563eb", status=200,
+        )
+
+
+@app.get("/api/safelinks/clicks")
+async def safelinks_clicks(limit: int = Query(100, le=500)):
+    """Recent safe-link clicks for the admin dashboard."""
+    async with async_session() as db:
+        try:
+            result = await db.execute(
+                text(
+                    "SELECT url, host, verdict, proceeded, created_at "
+                    "FROM safelink_clicks ORDER BY created_at DESC LIMIT :lim"
+                ),
+                {"lim": limit},
+            )
+        except Exception:
+            return {"clicks": []}
+        return {
+            "clicks": [
+                {
+                    "url": row[0],
+                    "host": row[1],
+                    "verdict": row[2],
+                    "proceeded": row[3],
+                    "created_at": str(row[4]),
+                }
+                for row in result.fetchall()
+            ]
+        }
 
 
 # --- End-user portal (recipient self-service) ---

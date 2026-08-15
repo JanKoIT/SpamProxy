@@ -451,8 +451,11 @@ class ContentFilterHandler:
                 asyncio.create_task(_rspamd_learn(raw_message, "spam"))
 
             if action == "delivered":
+                delivery_message = raw_message
+                if direction == "inbound":
+                    delivery_message = await self._apply_safelinks(raw_message, rcpt_to)
                 await asyncio.to_thread(
-                    self._reinject, mail_from, rcpt_to, raw_message
+                    self._reinject, mail_from, rcpt_to, delivery_message
                 )
                 return "250 OK"
             elif action == "quarantined":
@@ -769,6 +772,67 @@ class ContentFilterHandler:
         quar = values["spam_quarantine_threshold"]
         rej = max(values["spam_reject_threshold"], quar)
         return quar, rej, values["auto_learn_rejected_spam"]
+
+    async def _apply_safelinks(self, raw_message: bytes, rcpt_to: list[str]) -> bytes:
+        """Rewrite http(s) links in an inbound, delivered mail to click-time
+        protected safe links. Never raises - on any error the original message
+        is returned so delivery is not blocked."""
+        try:
+            from .safelinks.rewriter import build_config, rewrite_message
+
+            keys = ["safelinks_enabled", "report_token_secret", "public_base_url",
+                    "safelinks_trusted_domains", "safelinks_rewrite_plaintext",
+                    "safelinks_ttl_days", "safelinks_domain_scope", "safelinks_domains"]
+            async with async_session() as db:
+                result = await db.execute(select(Setting).where(Setting.key.in_(keys)))
+                vals = {s.key: s.value for s in result.scalars()}
+
+            if not (vals.get("safelinks_enabled") is True
+                    or vals.get("safelinks_enabled") == "true"):
+                return raw_message
+
+            # Per-domain scope: only protect recipients in selected domains.
+            scope = str(vals.get("safelinks_domain_scope") or "all").strip('"')
+            if scope == "selected":
+                enabled = vals.get("safelinks_domains") or []
+                if not isinstance(enabled, list):
+                    enabled = re.split(r"[\s,;]+", str(enabled).strip('"'))
+                enabled = {d.strip().lower().lstrip(".") for d in enabled if d and d.strip()}
+                rcpt_domains = {
+                    r.rsplit("@", 1)[1].lower() for r in rcpt_to if "@" in r
+                }
+                def _covered(dom: str) -> bool:
+                    return any(dom == e or dom.endswith("." + e) for e in enabled)
+                if not any(_covered(d) for d in rcpt_domains):
+                    return raw_message
+
+            secret = str(vals.get("report_token_secret") or "").strip('"')
+            base_url = str(vals.get("public_base_url") or "").strip('"')
+            if not secret or not base_url:
+                return raw_message
+
+            trusted_raw = vals.get("safelinks_trusted_domains") or ""
+            if isinstance(trusted_raw, list):
+                trusted = trusted_raw
+            else:
+                trusted = re.split(r"[\s,;]+", str(trusted_raw).strip('"'))
+
+            plaintext = not (vals.get("safelinks_rewrite_plaintext") is False
+                             or vals.get("safelinks_rewrite_plaintext") == "false")
+            try:
+                ttl_days = int(vals.get("safelinks_ttl_days") or 30)
+            except (ValueError, TypeError):
+                ttl_days = 30
+
+            cfg = build_config(
+                secret, base_url, trusted,
+                rewrite_plaintext=plaintext,
+                ttl_seconds=max(1, ttl_days) * 24 * 3600,
+            )
+            return await asyncio.to_thread(rewrite_message, raw_message, cfg)
+        except Exception:
+            logger.exception("SafeLinks rewrite failed; delivering original")
+            return raw_message
 
     async def _load_weights(self, session) -> tuple[float, float, float]:
         """Load AI scoring weights from settings.

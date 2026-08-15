@@ -52,6 +52,25 @@ DEFAULT_SETTINGS = [
     ("company_website", "", "reports", "Company website URL shown in report footer"),
     ("company_imprint_url", "", "reports", "Direct link to your imprint/legal page"),
     ("company_privacy_url", "", "reports", "Direct link to your privacy policy page"),
+    ("safelinks_enabled", False, "safelinks", "Rewrite links in inbound mail to click-time protected safe links"),
+    ("safelinks_domain_scope", "all", "safelinks", "Which recipient domains are protected: 'all' or 'selected' (only domains in safelinks_domains)"),
+    ("safelinks_domains", [], "safelinks", "Recipient domains to protect when scope is 'selected' (list of domains, subdomains included)"),
+    ("safelinks_mode", "interstitial", "safelinks", "Click behaviour: 'interstitial' (always show destination page) or 'silent' (redirect clean links immediately)"),
+    ("safelinks_rewrite_plaintext", True, "safelinks", "Also rewrite bare URLs in plain-text mail parts (not only HTML)"),
+    ("safelinks_trusted_domains", "", "safelinks", "Domains to leave untouched (comma/space separated). Subdomains included."),
+    ("safelinks_ttl_days", 30, "safelinks", "How many days a rewritten safe link stays valid"),
+    ("safelinks_check_surbl", True, "safelinks", "At click time, check the destination against Spamhaus DBL / SURBL blocklists"),
+    ("safelinks_scan_google_sb", False, "safelinks", "At click time, scan the destination with the Google Safe Browsing API"),
+    ("safelinks_google_sb_api_key", "", "safelinks", "Google Safe Browsing API key (required when Safe Browsing scanning is on)"),
+    ("safelinks_resolve_redirects", False, "safelinks", "Follow redirects/shorteners to the final URL and scan that too (anti-cloaking, with SSRF protection)"),
+    ("safelinks_scan_virustotal", False, "safelinks", "At click time, look up the destination in VirusTotal (requires API key)"),
+    ("safelinks_virustotal_api_key", "", "safelinks", "VirusTotal API key (v3). Public keys are rate limited to 4 requests/min."),
+    ("safelinks_virustotal_min_detections", 2, "safelinks", "Block when at least this many VirusTotal engines flag the URL as malicious"),
+    ("safelinks_interstitial_title", "Sie verlassen den geschützten Bereich", "safelinks", "Heading on the click interstitial page (leave empty for built-in default)"),
+    ("safelinks_interstitial_text", "Sie werden zu folgender Adresse weitergeleitet. Bitte prüfen Sie, ob das Ziel Ihren Erwartungen entspricht:", "safelinks", "Intro text on the click interstitial page"),
+    ("safelinks_button_label", "Weiter zur Seite", "safelinks", "Label of the 'continue' button on the interstitial page"),
+    ("safelinks_block_title", "Gefährlicher Link blockiert", "safelinks", "Heading on the block page for malicious links"),
+    ("safelinks_block_text", "SpamProxy hat das Ziel dieses Links als gefährlich eingestuft und den Zugriff blockiert.", "safelinks", "Message on the block page for malicious links"),
 ]
 
 
@@ -153,6 +172,19 @@ async def ensure_tables():
         ))
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_recipient_access_value ON recipient_access_list(LOWER(value))"
+        ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS safelink_clicks (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                url TEXT NOT NULL,
+                host VARCHAR(255),
+                verdict VARCHAR(20) NOT NULL,
+                proceeded BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_safelink_clicks_created ON safelink_clicks(created_at DESC)"
         ))
         await session.commit()
         logger.info("Database tables verified")
