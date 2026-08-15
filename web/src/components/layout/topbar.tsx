@@ -113,7 +113,13 @@ export default function Topbar() {
                 <p className="text-xs text-slate-400">{session?.user?.email}</p>
               </div>
               <button
-                onClick={() => signOut({ callbackUrl: "/login" })}
+                onClick={async () => {
+                  // Sign out without NextAuth's server-side redirect (which
+                  // resolves against NEXTAUTH_URL and can point at the internal
+                  // container URL), then navigate on the real public origin.
+                  await signOut({ redirect: false });
+                  window.location.href = "/login";
+                }}
                 className="flex w-full items-center gap-2 px-4 py-3 text-sm text-red-400 hover:bg-slate-700 rounded-b-lg transition-colors"
               >
                 <LogOut className="h-4 w-4" />
