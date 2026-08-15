@@ -19,6 +19,9 @@ const KEYS = [
   "safelinks_trusted_domains",
   "safelinks_ttl_days",
   "safelinks_check_surbl",
+  "safelinks_scan_google_sb",
+  "safelinks_google_sb_api_key",
+  "safelinks_resolve_redirects",
 ] as const;
 
 const TEXT_KEYS = [
@@ -72,6 +75,21 @@ const LABELS: Record<string, FieldMeta> = {
   safelinks_check_surbl: {
     label: "SURBL/DBL-Prüfung",
     help: "Beim Klick das Ziel zusätzlich gegen Spamhaus DBL / SURBL prüfen (DNS-Lookup).",
+    type: "bool",
+  },
+  safelinks_scan_google_sb: {
+    label: "Google Safe Browsing",
+    help: "Echtes Link-Scanning: prüft das Ziel beim Klick live gegen Googles Threat-Listen (Malware, Phishing, unerwünschte Software). Benötigt einen API-Key.",
+    type: "bool",
+  },
+  safelinks_google_sb_api_key: {
+    label: "Safe Browsing API-Key",
+    help: "Google-Cloud-API-Key mit aktivierter „Safe Browsing API“. Pflicht, wenn Safe Browsing aktiv ist.",
+    placeholder: "AIza…",
+  },
+  safelinks_resolve_redirects: {
+    label: "Weiterleitungen auflösen",
+    help: "Folgt URL-Shortenern/Weiterleitungen bis zum echten Ziel und scannt auch dieses (Anti-Cloaking). Interne/private Ziele werden blockiert (SSRF-Schutz).",
     type: "bool",
   },
 

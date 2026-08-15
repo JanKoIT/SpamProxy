@@ -114,6 +114,15 @@ def test_disabled_when_no_secret_or_base():
     assert rewrite_message(raw, build_config(SECRET, "", [])) == raw
 
 
+def test_ssrf_guard_blocks_private_ips():
+    from src.safelinks.scanner import _host_is_public
+    # IP literals need no DNS - deterministic offline.
+    assert _host_is_public("8.8.8.8") is True
+    for bad in ["127.0.0.1", "10.0.0.1", "192.168.1.1", "169.254.1.1",
+                "172.16.0.1", "0.0.0.0", "::1", ""]:
+        assert _host_is_public(bad) is False, bad
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

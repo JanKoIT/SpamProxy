@@ -3164,9 +3164,9 @@ def _surbl_listed(host: str) -> str | None:
     return None
 
 
-async def _safelinks_check_url(db, url: str, check_surbl: bool) -> tuple[str, str]:
-    """Classify a destination URL. Returns (verdict, reason) where verdict is
-    one of clean|suspicious|malicious."""
+async def _reputation_of(db, url: str, check_surbl: bool) -> tuple[str, str]:
+    """Reputation check for a single URL: admin blacklist + optional SURBL/DBL.
+    Returns (verdict, reason); verdict is clean|suspicious|malicious."""
     from urllib.parse import urlsplit
     try:
         host = (urlsplit(url).hostname or "").lower()
@@ -3199,6 +3199,43 @@ async def _safelinks_check_url(db, url: str, check_surbl: bool) -> tuple[str, st
             return "malicious", f"Domain in Spam-URL-Blocklist gelistet ({listed})"
 
     return "clean", "Keine Auffälligkeiten"
+
+
+async def _safelinks_check_url(db, url: str, opts: dict) -> tuple[str, str, str]:
+    """Classify a destination URL through all enabled layers. Returns
+    (verdict, reason, final_url) where final_url is the URL after following
+    redirects (== url if resolution is off or nothing changed)."""
+    from .safelinks.scanner import resolve_final_url, google_safe_browsing_lookup
+
+    # 1. Reputation of the URL as written in the mail.
+    verdict, reason = await _reputation_of(db, url, opts.get("check_surbl", False))
+    if verdict == "malicious":
+        return verdict, reason, url
+
+    # 2. Optional: follow redirects to the real destination (anti-cloaking).
+    final_url = url
+    if opts.get("resolve_redirects"):
+        resolved, status = await resolve_final_url(url)
+        if status == "blocked-nonpublic":
+            return ("malicious",
+                    "Weiterleitung auf ein nicht-öffentliches Ziel "
+                    "(mögliches SSRF/Phishing)", resolved)
+        if resolved and resolved != url:
+            final_url = resolved
+            rep2, reason2 = await _reputation_of(db, final_url, opts.get("check_surbl", False))
+            if rep2 == "malicious":
+                return "malicious", f"Weiterleitungsziel: {reason2}", final_url
+
+    # 3. Optional: real threat scan via Google Safe Browsing (original + final).
+    if opts.get("scan_sb") and opts.get("sb_api_key"):
+        for candidate in dict.fromkeys([url, final_url]):
+            listed, sb_reason = await google_safe_browsing_lookup(
+                candidate, opts["sb_api_key"]
+            )
+            if listed:
+                return "malicious", f"Google Safe Browsing: {sb_reason}", candidate
+
+    return verdict, reason, final_url
 
 
 async def _log_safelink_click(db, url: str, host: str, verdict: str, proceeded: bool):
@@ -3250,12 +3287,22 @@ async def safelinks_redirect(token: str):
     async with async_session() as db:
         vals = await _safelinks_get(db, [
             "safelinks_mode", "safelinks_check_surbl",
+            "safelinks_scan_google_sb", "safelinks_google_sb_api_key",
+            "safelinks_resolve_redirects",
             "safelinks_interstitial_title", "safelinks_interstitial_text",
             "safelinks_button_label", "safelinks_block_title", "safelinks_block_text",
         ])
         mode = str(vals.get("safelinks_mode") or "interstitial").strip('"')
-        check_surbl = (vals.get("safelinks_check_surbl") is True
-                       or vals.get("safelinks_check_surbl") == "true")
+
+        def _flag(key: str) -> bool:
+            return vals.get(key) is True or vals.get(key) == "true"
+
+        opts = {
+            "check_surbl": _flag("safelinks_check_surbl"),
+            "scan_sb": _flag("safelinks_scan_google_sb"),
+            "sb_api_key": str(vals.get("safelinks_google_sb_api_key") or "").strip('"').strip(),
+            "resolve_redirects": _flag("safelinks_resolve_redirects"),
+        }
 
         def _txt(key: str, default: str) -> str:
             v = vals.get(key)
@@ -3279,7 +3326,7 @@ async def safelinks_redirect(token: str):
             )
 
         host = (urlsplit(url).hostname or "").lower()
-        verdict, reason = await _safelinks_check_url(db, url, check_surbl)
+        verdict, reason, final_url = await _safelinks_check_url(db, url, opts)
         safe_url = _html.escape(url, quote=True)
 
         if verdict == "malicious":
@@ -3318,11 +3365,18 @@ async def safelinks_redirect(token: str):
             "ob das Ziel Ihren Erwartungen entspricht:",
         )
         button = _txt("safelinks_button_label", "Weiter zur Seite")
+        redirect_note = ""
+        if final_url and final_url != url:
+            redirect_note = (
+                f"<p><strong>Weiterleitung erkannt.</strong> Tatsächliches Ziel:</p>"
+                f"<span class='dest'>{_html.escape(final_url, quote=True)}</span>"
+            )
         return _safelinks_page(
             "Sicherer Link",
             f"<h1>🔗 {_html.escape(title)}</h1>"
             f"<p>{_html.escape(intro)}</p>"
             f"<span class='dest'>{safe_url}</span>"
+            f"{redirect_note}"
             f"{warn}"
             f"<p><a class='btn' href='{safe_url}' rel='noopener noreferrer'>"
             f"{_html.escape(button)}</a></p>"
