@@ -21,6 +21,14 @@ const KEYS = [
   "safelinks_check_surbl",
 ] as const;
 
+const TEXT_KEYS = [
+  "safelinks_interstitial_title",
+  "safelinks_interstitial_text",
+  "safelinks_button_label",
+  "safelinks_block_title",
+  "safelinks_block_text",
+] as const;
+
 const LABELS: Record<string, FieldMeta> = {
   safelinks_enabled: {
     label: "Safe Links aktivieren",
@@ -65,6 +73,32 @@ const LABELS: Record<string, FieldMeta> = {
     label: "SURBL/DBL-Prüfung",
     help: "Beim Klick das Ziel zusätzlich gegen Spamhaus DBL / SURBL prüfen (DNS-Lookup).",
     type: "bool",
+  },
+
+  safelinks_interstitial_title: {
+    label: "Überschrift (Zwischenseite)",
+    help: "Titel der Seite, die beim Klick angezeigt wird. Leer = eingebauter Standardtext.",
+    placeholder: "Sie verlassen den geschützten Bereich",
+  },
+  safelinks_interstitial_text: {
+    label: "Text (Zwischenseite)",
+    help: "Einleitungstext über der Ziel-Adresse.",
+    placeholder: "Sie werden zu folgender Adresse weitergeleitet …",
+  },
+  safelinks_button_label: {
+    label: "Button-Beschriftung",
+    help: "Text des Weiter-Buttons auf der Zwischenseite.",
+    placeholder: "Weiter zur Seite",
+  },
+  safelinks_block_title: {
+    label: "Überschrift (Blockseite)",
+    help: "Titel der Seite, wenn ein Link als gefährlich blockiert wird.",
+    placeholder: "Gefährlicher Link blockiert",
+  },
+  safelinks_block_text: {
+    label: "Text (Blockseite)",
+    help: "Meldung auf der Blockseite.",
+    placeholder: "SpamProxy hat das Ziel dieses Links als gefährlich eingestuft …",
   },
 };
 
@@ -180,6 +214,18 @@ export default function SafeLinksSettingsPage() {
       <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
         <div className="space-y-4">
           {KEYS.map((key) => (
+            <FieldRow key={key} settingKey={key} value={values[key]} onSave={save} />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+        <h2 className="text-base font-semibold text-white mb-1">Texte der Klick-Seiten</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Beschriftungen der Zwischen- und Blockseite, die dem Empfänger beim Klick angezeigt werden. Leer = eingebauter Standardtext.
+        </p>
+        <div className="space-y-4">
+          {TEXT_KEYS.map((key) => (
             <FieldRow key={key} settingKey={key} value={values[key]} onSave={save} />
           ))}
         </div>

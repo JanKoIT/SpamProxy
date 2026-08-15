@@ -3248,10 +3248,19 @@ async def safelinks_redirect(token: str):
     from urllib.parse import urlsplit
 
     async with async_session() as db:
-        vals = await _safelinks_get(db, ["safelinks_mode", "safelinks_check_surbl"])
+        vals = await _safelinks_get(db, [
+            "safelinks_mode", "safelinks_check_surbl",
+            "safelinks_interstitial_title", "safelinks_interstitial_text",
+            "safelinks_button_label", "safelinks_block_title", "safelinks_block_text",
+        ])
         mode = str(vals.get("safelinks_mode") or "interstitial").strip('"')
         check_surbl = (vals.get("safelinks_check_surbl") is True
                        or vals.get("safelinks_check_surbl") == "true")
+
+        def _txt(key: str, default: str) -> str:
+            v = vals.get(key)
+            v = "" if v is None else str(v).strip('"').strip()
+            return v or default
         secret = ""
         srow = await db.execute(select(Setting).where(Setting.key == "report_token_secret"))
         s = srow.scalar_one_or_none()
@@ -3275,11 +3284,16 @@ async def safelinks_redirect(token: str):
 
         if verdict == "malicious":
             await _log_safelink_click(db, url, host, verdict, proceeded=False)
+            block_title = _txt("safelinks_block_title", "Gefährlicher Link blockiert")
+            block_text = _txt(
+                "safelinks_block_text",
+                "SpamProxy hat das Ziel dieses Links als gefährlich eingestuft "
+                "und den Zugriff blockiert.",
+            )
             return _safelinks_page(
                 "Zugriff blockiert",
-                f"<h1>⛔ Gefährlicher Link blockiert</h1>"
-                f"<p>SpamProxy hat das Ziel dieses Links als gefährlich "
-                f"eingestuft und den Zugriff blockiert.</p>"
+                f"<h1>⛔ {_html.escape(block_title)}</h1>"
+                f"<p>{_html.escape(block_text)}</p>"
                 f"<p><strong>Grund:</strong> {_html.escape(reason)}</p>"
                 f"<span class='dest warn'>{safe_url}</span>"
                 f"<p class='muted'>Wenn Sie sicher sind, dass diese Seite "
@@ -3297,15 +3311,21 @@ async def safelinks_redirect(token: str):
         warn = ""
         if verdict == "suspicious":
             warn = (f"<p><strong>Hinweis:</strong> {_html.escape(reason)}</p>")
+        title = _txt("safelinks_interstitial_title", "Sie verlassen den geschützten Bereich")
+        intro = _txt(
+            "safelinks_interstitial_text",
+            "Sie werden zu folgender Adresse weitergeleitet. Bitte prüfen Sie, "
+            "ob das Ziel Ihren Erwartungen entspricht:",
+        )
+        button = _txt("safelinks_button_label", "Weiter zur Seite")
         return _safelinks_page(
             "Sicherer Link",
-            f"<h1>🔗 Sie verlassen geschützten Bereich</h1>"
-            f"<p>Sie werden zu folgender Adresse weitergeleitet. Bitte prüfen "
-            f"Sie, ob das Ziel Ihren Erwartungen entspricht:</p>"
+            f"<h1>🔗 {_html.escape(title)}</h1>"
+            f"<p>{_html.escape(intro)}</p>"
             f"<span class='dest'>{safe_url}</span>"
             f"{warn}"
             f"<p><a class='btn' href='{safe_url}' rel='noopener noreferrer'>"
-            f"Weiter zur Seite</a></p>"
+            f"{_html.escape(button)}</a></p>"
             f"<p class='muted'>Dieser Link wurde von SpamProxy auf Bedrohungen "
             f"geprüft.</p>",
             "#2563eb", status=200,

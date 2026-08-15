@@ -60,6 +60,11 @@ DEFAULT_SETTINGS = [
     ("safelinks_trusted_domains", "", "safelinks", "Domains to leave untouched (comma/space separated). Subdomains included."),
     ("safelinks_ttl_days", 30, "safelinks", "How many days a rewritten safe link stays valid"),
     ("safelinks_check_surbl", True, "safelinks", "At click time, check the destination against Spamhaus DBL / SURBL blocklists"),
+    ("safelinks_interstitial_title", "Sie verlassen den geschützten Bereich", "safelinks", "Heading on the click interstitial page (leave empty for built-in default)"),
+    ("safelinks_interstitial_text", "Sie werden zu folgender Adresse weitergeleitet. Bitte prüfen Sie, ob das Ziel Ihren Erwartungen entspricht:", "safelinks", "Intro text on the click interstitial page"),
+    ("safelinks_button_label", "Weiter zur Seite", "safelinks", "Label of the 'continue' button on the interstitial page"),
+    ("safelinks_block_title", "Gefährlicher Link blockiert", "safelinks", "Heading on the block page for malicious links"),
+    ("safelinks_block_text", "SpamProxy hat das Ziel dieses Links als gefährlich eingestuft und den Zugriff blockiert.", "safelinks", "Message on the block page for malicious links"),
 ]
 
 
