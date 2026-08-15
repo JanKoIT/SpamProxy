@@ -27,6 +27,7 @@ import {
   Server,
   Activity,
   UserCheck,
+  Link2,
 } from "lucide-react";
 
 const navItems = [
@@ -48,6 +49,7 @@ const navItems = [
   { href: "/settings/bayes", label: "Bayes Training", icon: Database },
   { href: "/settings/ai-test", label: "AI Test", icon: Brain },
   { href: "/settings/reports", label: "Reports & Footer", icon: Mail },
+  { href: "/settings/safelinks", label: "Safe Links", icon: Link2 },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/users", label: "Outgoing Auth", icon: Users },
   { href: "/settings/sender-domains", label: "Sender Domains", icon: Send },

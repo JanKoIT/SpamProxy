@@ -1,3 +1,4 @@
+import asyncio
 import email as email_lib
 import email.utils
 import logging
@@ -3125,6 +3126,218 @@ p{{color:#374151;font-size:14px;line-height:1.5;margin:8px 0;}}
             f"{succeeded} von {total} Nachrichten wurden verworfen und rspamd lernt die Muster.{skipped_note}",
             "#dc2626",
         )
+
+
+# --- Safe Links (click-time URL protection) ---
+
+from .safelinks.tokens import verify_link_token as _verify_link_token
+
+
+async def _safelinks_get(db, keys: list[str]) -> dict:
+    result = await db.execute(select(Setting).where(Setting.key.in_(keys)))
+    return {s.key: s.value for s in result.scalars()}
+
+
+def _surbl_listed(host: str) -> str | None:
+    """Return the name of the first blocklist that lists `host`, or None.
+    Runs blocking DNS lookups - call via asyncio.to_thread."""
+    try:
+        import dns.resolver
+    except Exception:
+        return None
+    host = host.strip(".").lower()
+    if not host or host.replace(".", "").isdigit():
+        return None  # skip bare IPs
+    resolver = dns.resolver.Resolver()
+    resolver.lifetime = 3.0
+    resolver.timeout = 3.0
+    checks = [("dbl.spamhaus.org", "Spamhaus DBL"), ("multi.surbl.org", "SURBL")]
+    for zone, label in checks:
+        try:
+            answers = resolver.resolve(f"{host}.{zone}", "A")
+            for a in answers:
+                # 127.0.0.1 is the "test point" / not-really-listed sentinel.
+                if str(a).startswith("127.0.") and str(a) != "127.0.0.1":
+                    return label
+        except Exception:
+            continue
+    return None
+
+
+async def _safelinks_check_url(db, url: str, check_surbl: bool) -> tuple[str, str]:
+    """Classify a destination URL. Returns (verdict, reason) where verdict is
+    one of clean|suspicious|malicious."""
+    from urllib.parse import urlsplit
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return "suspicious", "URL nicht interpretierbar"
+    if not host:
+        return "suspicious", "Kein Host in der URL"
+
+    # Admin blacklist (domain + url entries).
+    result = await db.execute(
+        select(AccessList).where(
+            AccessList.list_type == "blacklist",
+            AccessList.is_active.is_(True),
+        )
+    )
+    for entry in result.scalars():
+        val = (entry.value or "").lower().strip()
+        if not val:
+            continue
+        if entry.entry_type == "domain":
+            if host == val or host.endswith("." + val):
+                return "malicious", f"Domain steht auf der Blacklist ({val})"
+        elif entry.entry_type == "url":
+            if val in url.lower():
+                return "malicious", "URL steht auf der Blacklist"
+
+    if check_surbl:
+        listed = await asyncio.to_thread(_surbl_listed, host)
+        if listed:
+            return "malicious", f"Domain in Spam-URL-Blocklist gelistet ({listed})"
+
+    return "clean", "Keine Auffälligkeiten"
+
+
+async def _log_safelink_click(db, url: str, host: str, verdict: str, proceeded: bool):
+    try:
+        await db.execute(
+            text(
+                "INSERT INTO safelink_clicks (url, host, verdict, proceeded) "
+                "VALUES (:u, :h, :v, :p)"
+            ),
+            {"u": url[:2048], "h": host[:255], "v": verdict, "p": proceeded},
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("Failed to log safelink click")
+
+
+def _safelinks_page(title: str, body_html: str, accent: str, status: int = 200):
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(f"""<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>{title}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f4f6;margin:0;padding:24px;}}
+.card{{max-width:520px;margin:64px auto;background:#fff;border-radius:12px;padding:32px;
+       border:1px solid #e5e7eb;box-shadow:0 4px 12px rgba(0,0,0,.05);}}
+h1{{margin:0 0 12px;font-size:20px;color:{accent};}}
+p{{color:#374151;font-size:14px;line-height:1.55;margin:8px 0;}}
+.dest{{display:block;word-break:break-all;background:#f9fafb;border:1px solid #e5e7eb;
+       border-radius:8px;padding:10px 12px;font-size:13px;color:#111827;margin:16px 0;}}
+.btn{{display:inline-block;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;
+      text-decoration:none;color:#fff;background:{accent};}}
+.btn.secondary{{background:#6b7280;}}
+.warn{{background:#fef2f2;border-color:#fecaca;color:#991b1b;}}
+.muted{{color:#6b7280;font-size:12px;margin-top:20px;}}
+</style></head><body>
+<div class="card">{body_html}</div>
+</body></html>""", status_code=status)
+
+
+@app.get("/l/{token}")
+async def safelinks_redirect(token: str):
+    """Click-time protected link target. Verifies the signed token, checks the
+    destination's reputation, and shows an interstitial (or blocks). The
+    HMAC-signed token IS the authorization; no login required."""
+    import html as _html
+    from fastapi.responses import RedirectResponse
+    from urllib.parse import urlsplit
+
+    async with async_session() as db:
+        vals = await _safelinks_get(db, ["safelinks_mode", "safelinks_check_surbl"])
+        mode = str(vals.get("safelinks_mode") or "interstitial").strip('"')
+        check_surbl = (vals.get("safelinks_check_surbl") is True
+                       or vals.get("safelinks_check_surbl") == "true")
+        secret = ""
+        srow = await db.execute(select(Setting).where(Setting.key == "report_token_secret"))
+        s = srow.scalar_one_or_none()
+        if s and s.value:
+            secret = str(s.value).strip('"')
+
+        try:
+            url = _verify_link_token(token, secret)
+        except ValueError:
+            return _safelinks_page(
+                "Link ungültig",
+                "<h1>Link ungültig oder abgelaufen</h1>"
+                "<p>Dieser geschützte Link ist nicht mehr gültig. Bitte öffnen "
+                "Sie die ursprüngliche E-Mail erneut.</p>",
+                "#dc2626", status=400,
+            )
+
+        host = (urlsplit(url).hostname or "").lower()
+        verdict, reason = await _safelinks_check_url(db, url, check_surbl)
+        safe_url = _html.escape(url, quote=True)
+
+        if verdict == "malicious":
+            await _log_safelink_click(db, url, host, verdict, proceeded=False)
+            return _safelinks_page(
+                "Zugriff blockiert",
+                f"<h1>⛔ Gefährlicher Link blockiert</h1>"
+                f"<p>SpamProxy hat das Ziel dieses Links als gefährlich "
+                f"eingestuft und den Zugriff blockiert.</p>"
+                f"<p><strong>Grund:</strong> {_html.escape(reason)}</p>"
+                f"<span class='dest warn'>{safe_url}</span>"
+                f"<p class='muted'>Wenn Sie sicher sind, dass diese Seite "
+                f"vertrauenswürdig ist, wenden Sie sich an Ihren "
+                f"Administrator.</p>",
+                "#dc2626", status=200,
+            )
+
+        # clean or suspicious: interstitial mode always shows the destination.
+        if mode == "silent" and verdict == "clean":
+            await _log_safelink_click(db, url, host, verdict, proceeded=True)
+            return RedirectResponse(url, status_code=302)
+
+        await _log_safelink_click(db, url, host, verdict, proceeded=False)
+        warn = ""
+        if verdict == "suspicious":
+            warn = (f"<p><strong>Hinweis:</strong> {_html.escape(reason)}</p>")
+        return _safelinks_page(
+            "Sicherer Link",
+            f"<h1>🔗 Sie verlassen geschützten Bereich</h1>"
+            f"<p>Sie werden zu folgender Adresse weitergeleitet. Bitte prüfen "
+            f"Sie, ob das Ziel Ihren Erwartungen entspricht:</p>"
+            f"<span class='dest'>{safe_url}</span>"
+            f"{warn}"
+            f"<p><a class='btn' href='{safe_url}' rel='noopener noreferrer'>"
+            f"Weiter zur Seite</a></p>"
+            f"<p class='muted'>Dieser Link wurde von SpamProxy auf Bedrohungen "
+            f"geprüft.</p>",
+            "#2563eb", status=200,
+        )
+
+
+@app.get("/api/safelinks/clicks")
+async def safelinks_clicks(limit: int = Query(100, le=500)):
+    """Recent safe-link clicks for the admin dashboard."""
+    async with async_session() as db:
+        try:
+            result = await db.execute(
+                text(
+                    "SELECT url, host, verdict, proceeded, created_at "
+                    "FROM safelink_clicks ORDER BY created_at DESC LIMIT :lim"
+                ),
+                {"lim": limit},
+            )
+        except Exception:
+            return {"clicks": []}
+        return {
+            "clicks": [
+                {
+                    "url": row[0],
+                    "host": row[1],
+                    "verdict": row[2],
+                    "proceeded": row[3],
+                    "created_at": str(row[4]),
+                }
+                for row in result.fetchall()
+            ]
+        }
 
 
 # --- End-user portal (recipient self-service) ---

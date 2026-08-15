@@ -46,6 +46,15 @@ SpamProxy is placed as MX in front of your actual mail server and filters both i
 - **Sender domain verification** for outgoing mail (DNS token or manual)
 - **SMTP auth** for outgoing delivery (SASL via Dovecot protocol)
 
+### Safe Links (Click-Time URL Protection)
+- **URL rewriting** of links in inbound mail (HTML + optional plaintext) so every click routes through SpamProxy — the German-market analog of Microsoft Defender "Sichere Links"
+- **Click-time reputation check**: destination is verified against the admin blacklist and Spamhaus DBL / SURBL at the moment of the click, not just at delivery
+- **Per-domain scope**: enable Safe Links globally for all recipient domains, or only for selected domains (checkbox list of your handled domains)
+- **Interstitial or silent mode**: always show the real destination on a warning page, or redirect clean links straight through
+- **Stateless, signed links**: the target URL is HMAC-signed into the link (no per-mail DB rows); trusted domains are left untouched
+- **Click log** in the web interface (host, verdict, whether the user proceeded)
+- *Note:* rewriting the body breaks the sender's DKIM signature — harmless here, since rspamd verifies DKIM/SPF/DMARC **before** the rewrite and the backend trusts the proxy
+
 ### Scoring & Filtering
 - **Whitelist/Blacklist** for domains, emails, IPs, CIDR networks
 - **TLD-based score adjustments** (e.g. .ru +3.0, .de -1.0)

@@ -52,6 +52,14 @@ DEFAULT_SETTINGS = [
     ("company_website", "", "reports", "Company website URL shown in report footer"),
     ("company_imprint_url", "", "reports", "Direct link to your imprint/legal page"),
     ("company_privacy_url", "", "reports", "Direct link to your privacy policy page"),
+    ("safelinks_enabled", False, "safelinks", "Rewrite links in inbound mail to click-time protected safe links"),
+    ("safelinks_domain_scope", "all", "safelinks", "Which recipient domains are protected: 'all' or 'selected' (only domains in safelinks_domains)"),
+    ("safelinks_domains", [], "safelinks", "Recipient domains to protect when scope is 'selected' (list of domains, subdomains included)"),
+    ("safelinks_mode", "interstitial", "safelinks", "Click behaviour: 'interstitial' (always show destination page) or 'silent' (redirect clean links immediately)"),
+    ("safelinks_rewrite_plaintext", True, "safelinks", "Also rewrite bare URLs in plain-text mail parts (not only HTML)"),
+    ("safelinks_trusted_domains", "", "safelinks", "Domains to leave untouched (comma/space separated). Subdomains included."),
+    ("safelinks_ttl_days", 30, "safelinks", "How many days a rewritten safe link stays valid"),
+    ("safelinks_check_surbl", True, "safelinks", "At click time, check the destination against Spamhaus DBL / SURBL blocklists"),
 ]
 
 
@@ -153,6 +161,19 @@ async def ensure_tables():
         ))
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_recipient_access_value ON recipient_access_list(LOWER(value))"
+        ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS safelink_clicks (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                url TEXT NOT NULL,
+                host VARCHAR(255),
+                verdict VARCHAR(20) NOT NULL,
+                proceeded BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_safelink_clicks_created ON safelink_clicks(created_at DESC)"
         ))
         await session.commit()
         logger.info("Database tables verified")
