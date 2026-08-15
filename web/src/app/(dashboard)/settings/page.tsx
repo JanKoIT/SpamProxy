@@ -45,9 +45,14 @@ export default function SettingsPage() {
   }
 
   const knownCategories = ["scanning", "ai", "quarantine", "smtp"];
+  // Categories that have their own dedicated settings page (in the sidebar)
+  // are hidden here to avoid duplicate/raw controls.
+  const dedicatedCategories = ["reports", "safelinks"];
   const allCategories = [
     ...knownCategories.filter((c) => grouped[c]),
-    ...Object.keys(grouped).filter((c) => !knownCategories.includes(c)),
+    ...Object.keys(grouped).filter(
+      (c) => !knownCategories.includes(c) && !dedicatedCategories.includes(c),
+    ),
   ];
 
   return (
