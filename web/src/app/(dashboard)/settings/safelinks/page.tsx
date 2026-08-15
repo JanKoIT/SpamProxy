@@ -21,6 +21,9 @@ const KEYS = [
   "safelinks_check_surbl",
   "safelinks_scan_google_sb",
   "safelinks_google_sb_api_key",
+  "safelinks_scan_virustotal",
+  "safelinks_virustotal_api_key",
+  "safelinks_virustotal_min_detections",
   "safelinks_resolve_redirects",
 ] as const;
 
@@ -86,6 +89,22 @@ const LABELS: Record<string, FieldMeta> = {
     label: "Safe Browsing API-Key",
     help: "Google-Cloud-API-Key mit aktivierter „Safe Browsing API“. Pflicht, wenn Safe Browsing aktiv ist.",
     placeholder: "AIza…",
+  },
+  safelinks_scan_virustotal: {
+    label: "VirusTotal",
+    help: "Zusätzliches Scanning: schlägt das Ziel beim Klick in VirusTotal nach (70+ Engines). Benötigt einen API-Key. Öffentlicher Key ist auf 4 Anfragen/Min. limitiert.",
+    type: "bool",
+  },
+  safelinks_virustotal_api_key: {
+    label: "VirusTotal API-Key",
+    help: "Dein VirusTotal-API-Key (v3). Pflicht, wenn VirusTotal aktiv ist.",
+    placeholder: "64-stelliger Key",
+  },
+  safelinks_virustotal_min_detections: {
+    label: "VT-Schwellwert",
+    help: "Ab wie vielen Engines, die die URL als bösartig melden, blockiert wird. Darunter (aber >0) nur Warnhinweis. Empfohlen: 2.",
+    placeholder: "2",
+    type: "number",
   },
   safelinks_resolve_redirects: {
     label: "Weiterleitungen auflösen",

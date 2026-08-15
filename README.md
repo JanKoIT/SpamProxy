@@ -49,7 +49,7 @@ SpamProxy is placed as MX in front of your actual mail server and filters both i
 ### Safe Links (Click-Time URL Protection)
 - **URL rewriting** of links in inbound mail (HTML + optional plaintext) so every click routes through SpamProxy — the German-market analog of Microsoft Defender "Sichere Links"
 - **Click-time reputation check**: destination is verified against the admin blacklist and Spamhaus DBL / SURBL at the moment of the click, not just at delivery
-- **Real link scanning** (optional): live check against the Google Safe Browsing API (malware / phishing / unwanted software) plus redirect resolution that follows shorteners to the true destination and scans it too (anti-cloaking, with SSRF protection)
+- **Real link scanning** (optional): live check against the Google Safe Browsing API and/or VirusTotal (70+ engines) — malware / phishing / unwanted software — plus redirect resolution that follows shorteners to the true destination and scans it too (anti-cloaking, with SSRF protection)
 - **Per-domain scope**: enable Safe Links globally for all recipient domains, or only for selected domains (checkbox list of your handled domains)
 - **Interstitial or silent mode**: always show the real destination on a warning page, or redirect clean links straight through
 - **Stateless, signed links**: the target URL is HMAC-signed into the link (no per-mail DB rows); trusted domains are left untouched

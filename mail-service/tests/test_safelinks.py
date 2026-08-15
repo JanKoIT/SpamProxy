@@ -123,6 +123,16 @@ def test_ssrf_guard_blocks_private_ips():
         assert _host_is_public(bad) is False, bad
 
 
+def test_virustotal_stats_verdict():
+    from src.safelinks.scanner import _vt_stats_verdict
+    assert _vt_stats_verdict({"malicious": 5, "suspicious": 1}, 2)[0] == "malicious"
+    assert _vt_stats_verdict({"malicious": 2, "suspicious": 0}, 2)[0] == "malicious"
+    assert _vt_stats_verdict({"malicious": 1, "suspicious": 0}, 2)[0] == "suspicious"
+    assert _vt_stats_verdict({"malicious": 0, "suspicious": 3}, 2)[0] == "suspicious"
+    assert _vt_stats_verdict({"malicious": 0, "suspicious": 0}, 2)[0] == "clean"
+    assert _vt_stats_verdict({"harmless": 70}, 2)[0] == "clean"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

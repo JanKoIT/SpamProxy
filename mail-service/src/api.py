@@ -3205,7 +3205,9 @@ async def _safelinks_check_url(db, url: str, opts: dict) -> tuple[str, str, str]
     """Classify a destination URL through all enabled layers. Returns
     (verdict, reason, final_url) where final_url is the URL after following
     redirects (== url if resolution is off or nothing changed)."""
-    from .safelinks.scanner import resolve_final_url, google_safe_browsing_lookup
+    from .safelinks.scanner import (
+        resolve_final_url, google_safe_browsing_lookup, virustotal_lookup,
+    )
 
     # 1. Reputation of the URL as written in the mail.
     verdict, reason = await _reputation_of(db, url, opts.get("check_surbl", False))
@@ -3226,14 +3228,26 @@ async def _safelinks_check_url(db, url: str, opts: dict) -> tuple[str, str, str]
             if rep2 == "malicious":
                 return "malicious", f"Weiterleitungsziel: {reason2}", final_url
 
-    # 3. Optional: real threat scan via Google Safe Browsing (original + final).
+    # 3. Optional: real threat scans on original + final URL. Malicious from any
+    #    engine blocks immediately; a VirusTotal "suspicious" only flags.
+    candidates = list(dict.fromkeys([url, final_url]))
     if opts.get("scan_sb") and opts.get("sb_api_key"):
-        for candidate in dict.fromkeys([url, final_url]):
+        for candidate in candidates:
             listed, sb_reason = await google_safe_browsing_lookup(
                 candidate, opts["sb_api_key"]
             )
             if listed:
                 return "malicious", f"Google Safe Browsing: {sb_reason}", candidate
+
+    if opts.get("scan_vt") and opts.get("vt_api_key"):
+        for candidate in candidates:
+            vt_verdict, vt_reason = await virustotal_lookup(
+                candidate, opts["vt_api_key"], opts.get("vt_min", 2)
+            )
+            if vt_verdict == "malicious":
+                return "malicious", f"VirusTotal: {vt_reason}", candidate
+            if vt_verdict == "suspicious" and verdict == "clean":
+                verdict, reason = "suspicious", f"VirusTotal: {vt_reason}"
 
     return verdict, reason, final_url
 
@@ -3288,6 +3302,8 @@ async def safelinks_redirect(token: str):
         vals = await _safelinks_get(db, [
             "safelinks_mode", "safelinks_check_surbl",
             "safelinks_scan_google_sb", "safelinks_google_sb_api_key",
+            "safelinks_scan_virustotal", "safelinks_virustotal_api_key",
+            "safelinks_virustotal_min_detections",
             "safelinks_resolve_redirects",
             "safelinks_interstitial_title", "safelinks_interstitial_text",
             "safelinks_button_label", "safelinks_block_title", "safelinks_block_text",
@@ -3297,10 +3313,17 @@ async def safelinks_redirect(token: str):
         def _flag(key: str) -> bool:
             return vals.get(key) is True or vals.get(key) == "true"
 
+        try:
+            vt_min = int(vals.get("safelinks_virustotal_min_detections") or 2)
+        except (ValueError, TypeError):
+            vt_min = 2
         opts = {
             "check_surbl": _flag("safelinks_check_surbl"),
             "scan_sb": _flag("safelinks_scan_google_sb"),
             "sb_api_key": str(vals.get("safelinks_google_sb_api_key") or "").strip('"').strip(),
+            "scan_vt": _flag("safelinks_scan_virustotal"),
+            "vt_api_key": str(vals.get("safelinks_virustotal_api_key") or "").strip('"').strip(),
+            "vt_min": vt_min,
             "resolve_redirects": _flag("safelinks_resolve_redirects"),
         }
 
